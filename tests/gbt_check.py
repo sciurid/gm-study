@@ -1,6 +1,6 @@
 from unittest import TestCase
 from gmutil import sm3_hash
-from gmutil.sm4 import sm4_encrypt, sm4_decrypt, sm4_function
+from gmutil.sm4 import SM4, sm4_encrypt, sm4_decrypt
 
 
 class GBTCheck(TestCase):
@@ -18,17 +18,18 @@ class GBTCheck(TestCase):
         # GB/T 32097-2016 A.1
         message = bytes.fromhex('01234567 89ABCDEF FEDCBA98 76543210')
         secrets = bytes.fromhex('01234567 89ABCDEF FEDCBA98 76543210')
-        cipher_text = sm4_function(message, secrets, True)
+        cipher_text = sm4_encrypt(message, secrets)
 
         self.assertEqual(cipher_text, bytes.fromhex('681EDF34 D206965E 86B3E94F 536E4246'))
 
-        restored = sm4_function(cipher_text, secrets, False)
+        restored = sm4_decrypt(cipher_text, secrets)
         self.assertEqual(message, restored)
 
         # GB/T 32097-2016 A.2
+        sm4 = SM4(secrets)
         cipher_text = message
         for _ in range(1000000):
-            cipher_text = sm4_function(cipher_text, secrets, True)
+            cipher_text = sm4.encrypt_block(cipher_text)
             print(_)
         self.assertEqual(cipher_text, bytes.fromhex('595298C7 C6FD271F 0402F804 C33D3F66'))
 

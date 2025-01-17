@@ -114,9 +114,32 @@ def expand_round_keys(mk_octets: bytes):
     return ks[4:]
 
 
-def sm4_function(message: bytes, secret_key: bytes, encrypt: bool = True):
-    """SM4加密和解密
+def _do_sm4_rounds(message: bytes, round_keys: list[int], encrypt: bool = True) -> bytes:
+    """SM4轮函数迭代
 
+    GB/T 32907-2016 7.1 加密算法
+    :param message 明文输入
+    :param round_keys 轮密钥
+    :param encrypt 加密/解密，True表示加密，False表示解密
+    """
+    xs = [int.from_bytes(message[i: i + 4], signed=False) for i in range(0, 16, 4)]
+    for i, x in enumerate(xs):
+        logger.debug('x_%02d=%s', i, hex(x))
+    for i in range(32):
+        x_i = round_function(xs[i:i + 4], round_keys[i if encrypt else (31 - i)])  # 加密时正向使用轮密钥，解密时反向使用轮密钥
+        logger.debug('rk_%02d=%s, x_%02d=%s', i, hex(round_keys[i]), i, hex(xs[i]))
+        xs.append(x_i)
+
+    buffer = bytearray()
+    for i in range(35, 31, -1):
+        buffer.extend(xs[i].to_bytes(length=4, signed=False))
+    return bytes(buffer)
+
+
+def sm4_function(message: bytes, secret_key: bytes, encrypt: bool = True):
+    """SM4加密和解密函数
+
+    适用于一次性加解密的情况，相同密钥反复使用的情况适合使用SM4类
     GB/T 32907-2016 7.1 加密算法
     :param message 明文输入
     :param secret_key 加密密钥
@@ -125,70 +148,39 @@ def sm4_function(message: bytes, secret_key: bytes, encrypt: bool = True):
     assert len(message) == 16
     assert len(secret_key) == 16
 
-    rks = expand_round_keys(secret_key)
-    xs =[int.from_bytes(message[i: i + 4], signed=False) for i in range(0, 16, 4)]
-    for i, x in enumerate(xs):
-        logger.debug('x_%02d=%s', i, hex(x))
-    for i in range(32):
-        x_i = round_function(xs[i:i + 4], rks[i if encrypt else (31 - i)])  # 加密时正向使用轮密钥，解密时反向使用轮密钥
-        logger.debug('rk_%02d=%s, x_%02d=%s', i, hex(rks[i]), i, hex(xs[i]))
-        xs.append(x_i)
-
-    buffer = bytearray()
-    for i in range(35, 31, -1):
-        buffer.extend(xs[i].to_bytes(length=4, signed=False))
-    return bytes(buffer)
+    return _do_sm4_rounds(message, expand_round_keys(secret_key), encrypt)
 
 
 def sm4_encrypt(message: bytes, secret_key: bytes) -> bytes:
-    """GB/T 32907-2016 7.1 加密算法
+    """SM4加密函数
 
+    适用于一次性加密的情况，相同密钥反复使用的情况适合使用SM4类
+    GB/T 32907-2016 7.1 加密算法
     :param message 明文输入
     :param secret_key 加密密钥
     """
-    assert len(message) == 16
-    assert len(secret_key) == 16
+    return sm4_function(message, secret_key, True)
 
-    rks = expand_round_keys(secret_key)
-    xs =[int.from_bytes(message[i: i + 4], signed=False) for i in range(0, 16, 4)]
-    for i, x in enumerate(xs):
-        logger.debug('x_%02d=%s', i, hex(x))
-    for i in range(32):
-        x_i = round_function(xs[i:i + 4], rks[i])
-        logger.debug('rk_%02d=%s, x_%02d=%s', i, hex(rks[i]), i, hex(xs[i]))
-        xs.append(x_i)
-
-    buffer = bytearray()
-    for i in range(35, 31, -1):
-        buffer.extend(xs[i].to_bytes(length=4, signed=False))
-    return bytes(buffer)
 
 
 def sm4_decrypt(cipher_text: bytes, secret_key: bytes) -> bytes:
-    """GB/T 32907-2016 7.2 解密算法
+    """SM4解密函数
 
+    适用于一次性解密的情况，相同密钥反复使用的情况适合使用SM4类
     :param cipher_text 密文
     :param secret_key 加密密钥
     """
-    assert len(cipher_text) == 16
-    assert len(secret_key) == 16
-    rks = expand_round_keys(secret_key)
-
-    xs = [int.from_bytes(cipher_text[i: i + 4], signed=False) for i in range(0, 16, 4)]
-    for i, x in enumerate(xs):
-        logger.debug('x_%02d=%s', i, hex(x))
-    for i in range(32):
-        x_i = round_function(xs[i:i + 4], rks[31 - i])
-        logger.debug('rk_%02d=%s, x_%02d=%s', i, hex(rks[i]), i, hex(xs[i]))
-        xs.append(x_i)
-
-    buffer = bytearray()
-    for i in range(35, 31, -1):
-        buffer.extend(xs[i].to_bytes(length=4, signed=False))
-    return bytes(buffer)
+    return sm4_function(cipher_text, secret_key, False)
 
 
+class SM4:
+    def __init__(self, secret_key: bytes):
+        self._secret_key = secret_key
+        self._rks = expand_round_keys(secret_key)
 
+    def encrypt_block(self, message: bytes) -> bytes:
+        return _do_sm4_rounds(message, self._rks, True)
 
-
+    def decrypt_block(self, message: bytes) -> bytes:
+        return _do_sm4_rounds(message, self._rks, False)
 
