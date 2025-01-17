@@ -26,8 +26,9 @@ class GBTCheck(TestCase):
         self.assertEqual(message, restored)
 
         # GB/T 32097-2016 A.2
+        cipher_text = message
         for _ in range(1000000):
-            cipher_text = sm4_function(message, secrets, True)
+            cipher_text = sm4_function(cipher_text, secrets, True)
             print(_)
         self.assertEqual(cipher_text, bytes.fromhex('595298C7 C6FD271F 0402F804 C33D3F66'))
 

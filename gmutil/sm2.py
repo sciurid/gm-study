@@ -212,8 +212,8 @@ class SM2Point:
     """SM2椭圆曲线上的整数点，简称SM2点"""
     def __init__(self, x: Optional[int], y: Optional[int]):
         """根据x坐标和y坐标构造SM2点
-        如果x和y都是None，则表示无穷远点O
 
+        如果x和y都是None，则表示无穷远点O
         """
         assert (x is None and y is None) or (0 <= x < ECC_P and 0 <= y < ECC_P)
         self._x = x
@@ -451,9 +451,10 @@ class SM2PublicKey:
         """SM2公钥验签
 
         GB/T 32918.2-2016 7 (P4)
-        message: 待验签消息
-        signature: 签名数据，由r和s直接拼接成的数据，不包含任何数据头和格式
-        id_a: 用户ID，长度不超过0xffff
+        :parm message: 待验签消息
+        :parm signature: 签名数据，由r和s直接拼接成的数据，不包含任何数据头和格式
+        :parm id_a: 用户ID，长度不超过0xffff，默认值为0x1234567812345678（GM/T 0009-2023 7 用户身份标识ID的默认值）
+        :return: 验签结果
         """
         if len(signature) != 2 * ECC_LEN:
             raise ValueError("签名数据长度错误（{}），请检查是否包含了额外的数据头或其他格式".format(len(signature)))
@@ -474,11 +475,13 @@ class SM2PublicKey:
         logger.debug("r=%064x", vr)
         return vr == r
 
-    def encrypt(self, message: bytes, mode: str = 'C1C3C2'):
+    def encrypt(self, message: bytes, mode: str = 'C1C3C2') -> bytes:
         """SM2公钥加密
 
         GB/T 32918.4-2016 6 (P4)
-        message: 待加密消息
+        :param message: 待加密消息
+        :param mode: GB/T 32918.2-2016规定的是C1C3C2格式，有些历史遗留的非标情况是C1C2C3格式
+        :return: 密文
         """
 
         while True:
@@ -559,12 +562,14 @@ class SM2PrivateKey:
     def __repr__(self):
         return self.to_bytes().hex().upper()
 
-    def sign(self, message: bytes, id_a: bytes = '1234567812345678'.encode()):
+    def sign(self, message: bytes, id_a: bytes = '1234567812345678'.encode()) -> bytes:
         """SM2私钥签名
 
         GB/T 32918.2-2016 6 (P3)
-        message: 待签名数据
-        id_a: 用户ID，长度不超过0xffff
+        签名使用的哈希算法为SM3
+        :param message: 待签名数据
+        :param id_a:  用户ID，长度不超过0xffff，默认值为0x1234567812345678（GM/T 0009-2023 7 用户身份标识ID的默认值）
+        :return: 签名数据
         """
         buffer = bytearray(generator_za(self.point, id_a))
         buffer.extend(message)
@@ -587,7 +592,13 @@ class SM2PrivateKey:
             buffer.extend(_i2b(s))
             return bytes(buffer)
 
-    def decrypt(self, cipher_text: bytes):
+    def decrypt(self, cipher_text: bytes) -> bytes:
+        """SM2私钥解密
+
+        GB/T 32918.4-2016 7 (P4)
+        :param cipher_text: 密文
+        :return: 明文
+        """
         pivot_1 = 2 * ECC_LEN + 1
         pivot_2 = pivot_1 + 32
         c1 = cipher_text[0:pivot_1]
