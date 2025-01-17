@@ -8,7 +8,7 @@ IV = (0x7380166f, 0x4914b2b9, 0x172442d7, 0xda8a0600, 0xa96f30bc, 0x163138aa, 0x
 TJ = tuple(0x79cc4519 if 0 <= j < 16 else 0x7a879d8a for j in range (0, 64))
 
 
-def rls(x: int, n: int):
+def rls_32(x: int, n: int):
     """32位循环左移函数（Rotate Left Shift）：x <<< n
     """
     assert x.bit_length() <= 32
@@ -17,12 +17,12 @@ def rls(x: int, n: int):
     return ((x << n) & 0xffffffff) | ((x >> (32 - n)) & 0xffffffff)
 
 
-def mod_add(a: int, b: int):
+def mod_add_32(a: int, b: int):
     """模 2 ** 32 加法"""
     return (a + b) & 0xffffffff
 
 
-def mod_adds(*args):
+def mod_adds_32(*args):
     """模 2 ** 32 连续加法"""
     s = 0
     for n in args:
@@ -63,13 +63,13 @@ def sm3_gg_j(x: int, y: int, z: int, j):
 def sm3_p0(x: int):
     """GB/T 32905-2016 4.4 置换函数P0"""
     assert x.bit_length() <= 32
-    return x ^ rls(x, 9) ^ rls(x, 17)
+    return x ^ rls_32(x, 9) ^ rls_32(x, 17)
 
 
 def sm3_p1(x: int):
     """GB/T 32905-2016 4.4 置换函数P1"""
     assert x.bit_length() <= 32
-    return x ^ rls(x, 15) ^ rls(x, 23)
+    return x ^ rls_32(x, 15) ^ rls_32(x, 23)
 
 
 def pad(m: Union[bytes, bytearray]) -> bytes:
@@ -96,8 +96,8 @@ def expand(b: bytes) -> Tuple[list[int], list[int]]:
     assert len(b) == 64
     w = [int.from_bytes(b[i:i+4], byteorder='big', signed=False) for i in range(0, len(b), 4)]
     for j in range(16, 68):
-        w.append(sm3_p1(w[j - 16] ^ w[j - 9] ^ rls(w[j - 3], 15))
-                 ^ rls(w[j - 13], 7) ^ w[j - 6])
+        w.append(sm3_p1(w[j - 16] ^ w[j - 9] ^ rls_32(w[j - 3], 15))
+                 ^ rls_32(w[j - 13], 7) ^ w[j - 6])
 
     w_ = []
     for j in range(0, 64):
@@ -119,17 +119,17 @@ def cf(v_i: tuple, b_i: bytes) -> tuple:
 
     a, b, c, d, e, f, g, h = v_i
     for j in range(0, 64):
-        ss1 = rls(
-            mod_adds(rls(a, 12), e, rls(TJ[j], j % 32)), 7)
-        ss2 = ss1 ^ rls(a, 12)
-        tt1 = mod_adds(sm3_ff_j(a, b, c, j), d, ss2, w_[j])
-        tt2 = mod_adds(sm3_gg_j(e, f, g, j), h, ss1, w[j])
+        ss1 = rls_32(
+            mod_adds_32(rls_32(a, 12), e, rls_32(TJ[j], j % 32)), 7)
+        ss2 = ss1 ^ rls_32(a, 12)
+        tt1 = mod_adds_32(sm3_ff_j(a, b, c, j), d, ss2, w_[j])
+        tt2 = mod_adds_32(sm3_gg_j(e, f, g, j), h, ss1, w[j])
         d = c
-        c = rls(b, 9)
+        c = rls_32(b, 9)
         b = a
         a = tt1
         h = g
-        g = rls(f, 19)
+        g = rls_32(f, 19)
         f = e
         e = sm3_p0(tt2)
         # print(f'{j:02d}', [int.to_bytes(v, length=4, byteorder='big', signed=False).hex()
