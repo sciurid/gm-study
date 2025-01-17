@@ -150,7 +150,7 @@ def sm3_hash(message: Union[bytes, bytearray]) -> bytes:
     return bytes(buffer)
 
 
-def kdf_sm3(data: Union[bytes, bytearray], m_len: int):
+def sm3_kdf(data: Union[bytes, bytearray], m_len: int):
     """SM3密钥派生函数
     GB/T 32918.4-2016 6.4.3 (P3)
     data: 比特串

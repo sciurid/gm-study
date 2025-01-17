@@ -1,6 +1,6 @@
 from typing import Optional, Tuple
 import secrets
-from .sm3 import sm3_hash, kdf_sm3
+from .sm3 import sm3_hash, sm3_kdf
 from .calc import *
 import logging
 
@@ -282,16 +282,24 @@ def quick_mul_g_point(n: int) -> 'SM2Point':
     return p
 
 
-def generator_za(p: SM2Point, id_a: bytes) -> bytes:
-    # 头部信息Z_A
-    # GB/T 32918.2-2016 5.5
-    if len(id_a) > 0xff:
+DEFAULT_USER_ID = '1234567812345678'.encode()
+"""用户身份ID的默认值为0x1234567812345678（GM/T 0009-2023 7 用户身份标识ID的默认值）"""
+
+def generator_z(p: SM2Point, uid: bytes) -> bytes:
+    """SM2预处理：根据用户身份ID和公钥计算出头部值
+
+    GB/T 32918.2-2016 5.5
+    :param p: SM2Point 公钥SM2点
+    :param uid: 用户身份ID，长度不超过0xff
+    :return: bytes 头部值
+    """
+    if len(uid) > 0xff:
         raise ValueError("用户ID长度超出两个字节限制")
 
-    entl = (len(id_a) * 8).to_bytes(2, byteorder='big')
+    entl = (len(uid) * 8).to_bytes(2, byteorder='big')
     buffer = bytearray()
     buffer.extend(entl)
-    buffer.extend(id_a)
+    buffer.extend(uid)
     buffer.extend(_i2b(ECC_A))
     buffer.extend(_i2b(ECC_B))
     buffer.extend(_i2b(ECC_X))
@@ -313,13 +321,21 @@ class SM2PublicKey:
     def __repr__(self):
         return SM2Point.repr_uncompressed(self._point).hex().upper()
 
-    def verify(self, message: bytes, signature: bytes, id_a: bytes = '1234567812345678'.encode()) -> bool:
+    def generate_z(self, uid: bytes = DEFAULT_USER_ID) -> bytes:
+        """根据本公钥计算出头部值
+
+        :param uid: 用户身份ID，长度不超过0xffff
+        :return: 头部值
+        """
+        return generator_z(self._point, uid)
+
+    def verify(self, message: bytes, signature: bytes, uid: bytes = DEFAULT_USER_ID) -> bool:
         """SM2公钥验签
 
         GB/T 32918.2-2016 7 (P4)
         :parm message: 待验签消息
         :parm signature: 签名数据，由r和s直接拼接成的数据，不包含任何数据头和格式
-        :parm id_a: 用户ID，长度不超过0xffff，默认值为0x1234567812345678（GM/T 0009-2023 7 用户身份标识ID的默认值）
+        :parm id_a: 用户ID，长度不超过0xffff
         :return: 验签结果
         """
         if len(signature) != 2 * ECC_LEN:
@@ -328,7 +344,7 @@ class SM2PublicKey:
         logger.debug("r=%s", signature[0:ECC_LEN].hex())
         s = int.from_bytes(signature[ECC_LEN:], byteorder='big')
         logger.debug("s=%s", signature[ECC_LEN:].hex())
-        buffer = bytearray(generator_za(self._point, id_a))
+        buffer = bytearray(generator_z(self._point, uid))
         buffer.extend(message)
         e = int.from_bytes(sm3_hash(buffer), byteorder='big', signed=False)
         t = (r + s) % ECC_N  # Prove: t == (k + r) / (1 + d)
@@ -365,7 +381,7 @@ class SM2PublicKey:
             buffer.extend(p2.x_octets)
             buffer.extend(p2.y_octets)
             m_len = len(message)
-            t = kdf_sm3(bytes(buffer), m_len)
+            t = sm3_kdf(bytes(buffer), m_len)
             logger.debug("   t=%s", t.hex())
             if t == 0:
                 continue
@@ -428,7 +444,7 @@ class SM2PrivateKey:
     def __repr__(self):
         return self.to_bytes().hex().upper()
 
-    def sign(self, message: bytes, id_a: bytes = '1234567812345678'.encode()) -> bytes:
+    def sign(self, message: bytes, id_a: bytes = DEFAULT_USER_ID) -> bytes:
         """SM2私钥签名
 
         GB/T 32918.2-2016 6 (P3)
@@ -437,7 +453,7 @@ class SM2PrivateKey:
         :param id_a:  用户ID，长度不超过0xffff，默认值为0x1234567812345678（GM/T 0009-2023 7 用户身份标识ID的默认值）
         :return: 签名数据
         """
-        buffer = bytearray(generator_za(self.point, id_a))
+        buffer = bytearray(generator_z(self.point, id_a))
         buffer.extend(message)
         e = int.from_bytes(sm3_hash(buffer), byteorder='big', signed=False)
 
@@ -480,7 +496,7 @@ class SM2PrivateKey:
         buffer = bytearray()
         buffer.extend(p2.x_octets)
         buffer.extend(p2.y_octets)
-        t = kdf_sm3(buffer, m_len)
+        t = sm3_kdf(buffer, m_len)
         logger.debug("   t=%s", t.hex())
         logger.debug("   c=%s", c2.hex())
         buffer.clear()
