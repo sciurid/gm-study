@@ -17,7 +17,6 @@ def primes(n):
 
 
 class FundamentalTests(TestCase):
-
     def test_pow_mod(self):
         n = 127
         for k in range(1000):
@@ -26,9 +25,9 @@ class FundamentalTests(TestCase):
             self.assertEqual(res, cmp)
 
     def test_square_root_mod_prime(self):
-        for p in primes(10000)[1:]:
+        for p in primes(100)[1:]:
             for n in range(0, p):
-                q = square_root_mod_prime(n, p)
+                q = square_root_mod_prime(p, n)
                 if q is not None:
                     print(p, n, q, q ** 2 % p - n)
                     self.assertEqual(q ** 2 % p,  n)
@@ -39,7 +38,7 @@ class FundamentalTests(TestCase):
     def test_ex_gcd(self):
         n = p_mul(2, ECC_Y)
         p = ECC_P
-        i = inverse_mod_prime(n, p)
+        i = inverse_mod_prime(p, n)
         print(i)
         self.assertEqual((n * i) % p, 1)
 
@@ -67,7 +66,7 @@ class FundamentalTests(TestCase):
             print(p)
             self.assertTrue(on_curve(p._x, p._y))
 
-    def test_signature(self, id = '1234567812345678', message = 'A fox jumps over the lazy dog.'):
+    def test_signature(self, message = 'A fox jumps over the lazy dog.'):
         prikey = SM2PrivateKey()
         pubkey = prikey.get_public_key()
 

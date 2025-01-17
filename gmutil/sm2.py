@@ -1,6 +1,7 @@
 from typing import Optional, Tuple
 import secrets
 from .sm3 import sm3_hash, kdf_sm3
+from .calc import *
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,166 +25,31 @@ ECC_LEN = ECC_P.bit_length() // 8
 
 
 def p_add(a: int, b: int) -> int:
-    """模素数加法"""
-    # assert 0 <= a < ECC_P
-    # assert 0 <= b < ECC_P
-    return (a + b) % ECC_P
+    return add_mod_prime(ECC_P, a, b)
 
 
 def p_adds(*args):
-    """模素数连加"""
-    res = 0
-    for arg in args:
-        assert type(arg) is int and 0 <= arg < ECC_P
-        res = p_add(res, arg)
-    return res
+    return add_mod_prime(ECC_P, *args)
 
 
 def p_minus(a: int, b: int) -> int:
-    """模素数减法"""
-    return (a - b) % ECC_P
+    return minus_mod_prime(ECC_P, a, b)
 
 
 def p_mul(a: int, b: int) -> int:
-    """模素数乘法"""
-    return (a * b) % ECC_P
-
-
-def _pow_mod(p: int, n: int, k: int):
-    """快速计算n ** k % p的方法"""
-    if k == 0:
-        return 1
-
-    res = 1
-    mask = 1
-    next_pow = n
-    for _ in range(k.bit_length()):
-        if k & mask != 0:
-            res = res * next_pow % p
-        next_pow = next_pow ** 2 % p
-        mask = mask << 1
-
-    # assert (n ** k) % p == res
-    return res
+    return mul_mod_prime(ECC_P, a, b)
 
 
 def p_pow(n: int, k: int) -> int:
-    return _pow_mod(ECC_P, n, k)
-
-
-def ex_gcd(a: int, b: int) -> Tuple[int, int, int]:
-    """扩展的欧几里得算法
-    通常用于求最大公约数和模素数求逆
-    r = gcd(a, b)
-    r = a * x + b * y
-    """
-    if a < b:
-        a, b = b, a
-
-    if b == 0:
-        return a, 1, 0
-
-    r, x, y = ex_gcd(b, a % b)
-    x, y = y, x - (a // b) * y
-
-    assert r == a * x + b * y
-    return r, x, y
-
-
-def inverse_mod_prime(n: int, p: int) -> Optional[int]:
-    assert 0 < n < p
-    r, x, y = ex_gcd(p, n)
-    assert r == 1
-    return y % p
+    return pow_mod_prime(ECC_P, n, k)
 
 
 def p_div(a: int, b: int) -> int:
-    return (a * inverse_mod_prime(b, ECC_P)) % ECC_P
-
-
-def _div_by_two_modulo_prime(n: int, p: int) -> int:
-    while n < 0:
-        n += p
-    if n % 2 == 1:
-        n += p
-    return (n // 2) % p
-
-
-def _lucas_quick(p, x, y, k):
-    """生成Lucas序列的U mod p和V mod p
-
-    GB/T 32918.1-2016 B.1.3 (P29)
-    """
-    delta = x ** 2 - 4 * y
-    r = k.bit_length() - 1
-    u = 1
-    v = x
-
-    for i in range(r - 1, -1, -1):
-        u, v = (u * v), ((v ** 2 + u ** 2 * delta) // 2)
-        if k & (0x01 << i) != 0:
-            u, v = (x * u + v) // 2, (x * v + delta * u) // 2
-    return u % p, v % p
-
-
-def _lucas_sequence(p, x, y, k):
-    """生成Lucas序列的U mod p和V mod p
-
-    GB/T 32918.1-2016 B.1.3 (P29)
-    """
-    u_0, u_1 = 0, 1
-    v_0, v_1 = 2, x
-    for n in range(2, k + 1):
-        u_n, v_n = x * u_1 - y * u_0, x * v_1 - y * v_0
-        u_0, v_0 = u_1, v_1
-        u_1, v_1 = u_n, v_n
-    return u_1 % p, v_1 % p
-
-
-def square_root_mod_prime(g: int, p: int) -> Optional[int]:
-    """求解模素数平方根
-
-    GB/T 32918.1-2016 B.1.3 (P29)
-    """
-    if g == 0:
-        return 0
-
-    if p % 4 == 3:
-        u = (p - 3) // 4
-        y = _pow_mod(p, g, u + 1)
-        z = (y ** 2) % p
-        if z == g:
-            return y
-        else:
-            return None
-
-    if p % 8 == 5:
-        u = (p - 5) // 8
-        z = _pow_mod(p, g, 2 * u + 1)
-        if (z - 1) % p == 0:
-            y = _pow_mod(p, g, u + 1)
-            return y
-        elif (z + 1) % p == 0:
-            y = (_pow_mod(p, (4 * g), u) * 2 * g) % p
-            return y
-        else:
-            return None
-
-    if p % 8 == 1:
-        while True:
-            y = g
-            x = secrets.randbelow(p)
-            u, v = _lucas_quick(p, x, g, ((p - 1) // 8) * 4 + 1)
-            if (v ** 2 - 4 * y) % p == 0:
-                return (v // 2) % p if v % 2 == 0 else ((v + p) // 2) % p
-            if (u - 1) % p != 0 and (u + 1) % p != 0:
-                return None
-
-    raise ValueError(f"Number {p} is not a prime.")
+    return (a * inverse_mod_prime(ECC_P, b)) % ECC_P
 
 
 def p_sqrt(n: int) -> Optional[int]:
-    return square_root_mod_prime(n, ECC_P)
+    return square_root_mod_prime(ECC_P, n)
 
 
 def on_curve(x: int, y: int) -> int:
@@ -195,7 +61,7 @@ def on_curve(x: int, y: int) -> int:
 
 def calculate_y(x: int) -> int:
     """根据SM2椭圆曲线上点的x计算对应的y"""
-    return square_root_mod_prime((x ** 3 + ECC_A * x + ECC_B) % ECC_P, ECC_P)
+    return p_sqrt((x ** 3 + ECC_A * x + ECC_B) % ECC_P)
 
 
 def _i2h(n: int) -> Optional[str]:
@@ -355,7 +221,7 @@ class SM2Point:
                 raise ValueError(f"SM2点压缩格式长度{len(octets)}不符合标准，应当为{ECC_LEN + 1}")
             x = int.from_bytes(octets[1:], byteorder='big')
             y_pow = p_adds(p_pow(x, 3), p_mul(ECC_A, x), ECC_B)  # GB/T 32918.1-2016 A.5.2
-            y = square_root_mod_prime(y_pow, ECC_P)
+            y = p_sqrt(y_pow)
 
             if y & 0x01 == y_p:
                 return SM2Point(x, y)
@@ -368,7 +234,7 @@ class SM2Point:
                 raise ValueError(f"SM2点混合格式长度{len(octets)}不符合标准，应当为{2 * ECC_LEN + 1}")
             x = int.from_bytes(octets[1:], byteorder='big')
             ry_pow = p_adds(p_pow(x, 3), p_mul(ECC_A, x), ECC_B)
-            ry = square_root_mod_prime(ry_pow, ECC_P)
+            ry = p_sqrt(ry_pow)
 
             if ry & 0x01 == y_p:
                 ry = ECC_P - ry
@@ -583,7 +449,7 @@ class SM2PrivateKey:
             if r == 0 or r + k == ECC_N:
                 continue
             logger.debug("r=%s", _i2h(r))
-            s = (inverse_mod_prime(1 + self._secret, ECC_N) * (k - r * self._secret) % ECC_N) % ECC_N
+            s = (inverse_mod_prime(ECC_N, 1 + self._secret) * (k - r * self._secret) % ECC_N) % ECC_N
             if s == 0:
                 continue
             logger.debug("s=%s", _i2h(s))
