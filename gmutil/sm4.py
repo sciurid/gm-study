@@ -151,7 +151,7 @@ def sm4_function(message: bytes, secret_key: bytes, encrypt: bool = True):
     return _do_sm4_rounds(message, expand_round_keys(secret_key), encrypt)
 
 
-def sm4_encrypt(message: bytes, secret_key: bytes) -> bytes:
+def sm4_encrypt_block(message: bytes, secret_key: bytes) -> bytes:
     """SM4加密函数
 
     适用于一次性加密的情况，相同密钥反复使用的情况适合使用SM4类
@@ -163,7 +163,7 @@ def sm4_encrypt(message: bytes, secret_key: bytes) -> bytes:
 
 
 
-def sm4_decrypt(cipher_text: bytes, secret_key: bytes) -> bytes:
+def sm4_decrypt_block(cipher_text: bytes, secret_key: bytes) -> bytes:
     """SM4解密函数
 
     适用于一次性解密的情况，相同密钥反复使用的情况适合使用SM4类
@@ -174,6 +174,7 @@ def sm4_decrypt(cipher_text: bytes, secret_key: bytes) -> bytes:
 
 
 class SM4:
+    """SM4加解密类，适用于相同密钥反复使用的情况"""
     def __init__(self, secret_key: bytes):
         self._secret_key = secret_key
         self._rks = expand_round_keys(secret_key)

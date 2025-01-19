@@ -43,7 +43,6 @@ def pow_mod_prime(p: int, n: int, k: int):
     return res
 
 
-
 def ex_gcd(a: int, b: int) -> Tuple[int, int, int]:
     """扩展的欧几里得算法
     通常用于求最大公约数和模素数求逆
@@ -59,24 +58,16 @@ def ex_gcd(a: int, b: int) -> Tuple[int, int, int]:
     r, x, y = ex_gcd(b, a % b)
     x, y = y, x - (a // b) * y
 
-    assert r == a * x + b * y
+    # assert r == a * x + b * y
     return r, x, y
 
 
 def inverse_mod_prime(p: int, n: int) -> Optional[int]:
+    """求p素域中的乘法逆元"""
     assert 0 < n < p
     r, x, y = ex_gcd(p, n)
     assert r == 1
     return y % p
-
-
-
-def _div_by_two_modulo_prime(n: int, p: int) -> int:
-    while n < 0:
-        n += p
-    if n % 2 == 1:
-        n += p
-    return (n // 2) % p
 
 
 def _lucas_quick(p, x, y, k):

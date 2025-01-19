@@ -150,6 +150,12 @@ class SM2Point:
             next_pow += next_pow
         return res
 
+
+    def __rmul__(self, k: int) -> 'SM2Point':
+        """SM2点的整数倍"""
+        return self * k
+
+
     def __eq__(self, other: 'SM2Point') -> bool:
         """判断两个SM2点相等"""
         return self._x == other._x and self._y == other._y
