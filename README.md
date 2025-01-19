@@ -68,7 +68,7 @@ for _ in range(1000000):
 assert cipher_text == bytes.fromhex('595298C7 C6FD271F 0402F804 C33D3F66')
 ```
 
-### SM2签名和验签（SM2哈希/杂凑）
+### SM2签名和验签（SM3哈希/杂凑）
 
 ```
 message = 'A fox jumps over the lazy dog.'  # 明文
