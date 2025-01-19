@@ -2,7 +2,7 @@ from unittest import TestCase, skip
 from gmutil import *
 import logging
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 def primes(n):
     out = list()

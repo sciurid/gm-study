@@ -1,7 +1,6 @@
 import unittest
 
 from gmutil import *
-import sys
 
 class KeyExchangeTests(unittest.TestCase):
     def test_simple_key_exchange(self):
