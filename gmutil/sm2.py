@@ -319,7 +319,11 @@ class SM2PublicKey:
         return self._point
 
     def __repr__(self):
-        return SM2Point.repr_uncompressed(self._point).hex().upper()
+        return '({},{})'.format(self._point.x_octets.hex().upper(), self._point.y_octets.hex().upper())
+
+    @property
+    def octets(self) -> bytes:
+        return SM2Point.repr_uncompressed(self._point)
 
     def generate_z(self, uid: bytes = DEFAULT_USER_ID) -> bytes:
         """根据本公钥计算出头部值

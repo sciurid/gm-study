@@ -13,7 +13,7 @@ class KeyExchangeTests(unittest.TestCase):
 
         print("Key A:", key_a.hex())
         print("Key B:", key_b.hex())
-        sys.stdout.flush()
+        self.assertEqual(key_a, key_b)
 
 
     def test_verified_key_exchange(self):

@@ -1,6 +1,5 @@
 from unittest import TestCase
-from gmutil import sm3_hash
-from gmutil.sm4 import SM4, sm4_encrypt, sm4_decrypt
+from gmutil import sm3_hash, SM4, sm4_encrypt, sm4_decrypt
 
 
 class GBTCheck(TestCase):

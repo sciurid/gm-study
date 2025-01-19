@@ -1,5 +1,4 @@
 from unittest import TestCase, skip
-from cryptography.hazmat.primitives.hashes import Hash, SM3
 from gmutil import *
 import logging
 
@@ -67,29 +66,33 @@ class FundamentalTests(TestCase):
             self.assertTrue(on_curve(p._x, p._y))
 
     def test_signature(self, message = 'A fox jumps over the lazy dog.'):
+        print("Message:", message.encode().hex())
+
         prikey = SM2PrivateKey()
-        pubkey = prikey.get_public_key()
-
-        print(message.encode().hex())
-
-        print(pubkey.point.x_octets.hex(), pubkey.point.y_octets.hex())
+        print("Private Key:", prikey.to_bytes().hex())
         signature = prikey.sign(message.encode())
-        print(signature.hex().upper())
+        print("Signature:", signature.hex().upper())
 
+        pubkey = prikey.get_public_key()
+        print("Public Key:", pubkey)
         self.assertTrue(pubkey.verify(message.encode(), signature))
 
     def test_encryption(self, message = 'A fox jumps over the lazy dog.'):
-        # 加密
+        print("Message:", message.encode('ascii').hex())
+
         prikey = SM2PrivateKey()
+        print("Private Key:", prikey.to_bytes().hex())
         pubkey = prikey.get_public_key()
+        print("Public Key:", pubkey)
 
-        print(prikey)
-        print(pubkey)
-        c = pubkey.encrypt(message.encode())
-        print(c.hex().upper())
+        cipher_text = pubkey.encrypt(message.encode())
+        print("Cipher Text:", cipher_text.hex().upper())
 
-        recovered = prikey.decrypt(c)
-        self.assertEqual(message.encode(), recovered)
+        recovered = prikey.decrypt(cipher_text)
+        print("Recovered:", recovered.hex().upper())
+        print("Message:", recovered.decode('ascii'))
+
+        self.assertEqual(message, recovered.decode('ascii'))
 
 
 
