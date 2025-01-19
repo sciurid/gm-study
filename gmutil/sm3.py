@@ -1,4 +1,4 @@
-from typing import Union, Tuple
+from typing import Union, Tuple, Sequence
 
 # GB/T 32905-2016 4.1 初始值
 IV = (0x7380166f, 0x4914b2b9, 0x172442d7, 0xda8a0600, 0xa96f30bc, 0x163138aa, 0xe38dee4d, 0xb0fb0e4e)
@@ -91,7 +91,7 @@ def pad(m: Union[bytes, bytearray]) -> bytes:
     return bytes(buffer)
 
 
-def expand(b: bytes) -> Tuple[list[int], list[int]]:
+def expand(b: bytes) -> Tuple[Sequence[int], Sequence[int]]:
     """GB/T 32905-2016 5.3.2 消息扩展"""
     assert len(b) == 64
     w = [int.from_bytes(b[i:i+4], byteorder='big', signed=False) for i in range(0, len(b), 4)]
