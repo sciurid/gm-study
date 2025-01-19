@@ -122,7 +122,7 @@ def _do_sm4_rounds(message: bytes, round_keys: List[int], encrypt: bool = True) 
     :param round_keys 轮密钥
     :param encrypt 加密/解密，True表示加密，False表示解密
     """
-    xs = [int.from_bytes(message[i: i + 4], signed=False) for i in range(0, 16, 4)]
+    xs = [int.from_bytes(message[i: i + 4], byteorder='big', signed=False) for i in range(0, 16, 4)]
     for i, x in enumerate(xs):
         logger.debug('x_%02d=%s', i, hex(x))
     for i in range(32):
