@@ -29,7 +29,8 @@ class GBTCheck(TestCase):
         cipher_text = message
         for _ in range(1000000):
             cipher_text = sm4.encrypt_block(cipher_text)
-            print(_)
+            if _ % 10000 == 0:
+                print(_)
         self.assertEqual(cipher_text, bytes.fromhex('595298C7 C6FD271F 0402F804 C33D3F66'))
 
 
