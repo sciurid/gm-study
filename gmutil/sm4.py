@@ -52,12 +52,12 @@ PKCS7 = 3
 PBOC = 4
 
 
-def _i32_to_i8l(n: int) -> list[int]:
+def _i32_to_i8l(n: int) -> List[int]:
     """32位无符号整数转为4个8位无符号整数"""
     return [((n >> i) & 0xff) for i in range(24, -1, -8)]
 
 
-def _i8l_to_i32(l: list[int]) -> int:
+def _i8l_to_i32(l: List[int]) -> int:
     """4个8位无符号整数转为32为无符号整数"""
     assert len(l) == 4
     n = 0
@@ -67,7 +67,7 @@ def _i8l_to_i32(l: list[int]) -> int:
     return n
 
 
-def _rls(x: Union[int, list[int]], t: int) -> Union[int, list[int]]:
+def _rls(x: Union[int, List[int]], t: int) -> Union[int, List[int]]:
     """循环左移函数 Rotate Left Shift
 
     :param x: 输入32位无符号整数（整数，或者由4个8位整数构成的列表）
@@ -83,7 +83,7 @@ def _rls(x: Union[int, list[int]], t: int) -> Union[int, list[int]]:
     return _i32_to_i8l(n)
 
 
-def round_function(x: list[int], rk: int):
+def round_function(x: List[int], rk: int):
     """GB/T 32907-2016 6.1 轮函数结构
 
     :param x 本轮输入，4个32位无符号整数
@@ -114,7 +114,7 @@ def expand_round_keys(mk_octets: bytes):
     return ks[4:]
 
 
-def _do_sm4_rounds(message: bytes, round_keys: list[int], encrypt: bool = True) -> bytes:
+def _do_sm4_rounds(message: bytes, round_keys: List[int], encrypt: bool = True) -> bytes:
     """SM4轮函数迭代
 
     GB/T 32907-2016 7.1 加密算法
