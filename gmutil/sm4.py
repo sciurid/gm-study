@@ -132,7 +132,7 @@ def _do_sm4_rounds(message: bytes, round_keys: List[int], encrypt: bool = True) 
 
     buffer = bytearray()
     for i in range(35, 31, -1):
-        buffer.extend(xs[i].to_bytes(length=4, signed=False))
+        buffer.extend(xs[i].to_bytes(length=4, byteorder='big', signed=False))
     return bytes(buffer)
 
 
