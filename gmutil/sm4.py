@@ -103,7 +103,7 @@ def expand_round_keys(mk_octets: bytes):
     :param mk_octets 加密密钥，128-bit字节串
     """
     assert len(mk_octets) == 16
-    mk = [int.from_bytes(mk_octets[i: i + 4], signed=False) for i in range(0, 16, 4)]  # 转换成4个32位整数
+    mk = [int.from_bytes(mk_octets[i: i + 4], byteorder='big', signed=False) for i in range(0, 16, 4)]  # 转换成4个32位整数
     ks = [mk_i ^ fk_i for mk_i, fk_i in zip(mk, SM4_FK)] # 式（6）
     for i in range(32):
         a = ks[i + 1] ^ ks[i + 2] ^ ks[i + 3] ^ SM4_CK[i]
