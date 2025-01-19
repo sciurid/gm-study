@@ -142,3 +142,4 @@ self.assertEqual(user_a.exchanged_key, user_b.exchanged_key)
 ## 待开发
 
 - SM2私钥和公钥的保存格式
+- SM4加密的补齐（padding）和模式（mod）
