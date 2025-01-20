@@ -1,7 +1,6 @@
 import unittest
 
 from gmutil import *
-import sys
 
 class KeyExchangeTests(unittest.TestCase):
     def test_simple_key_exchange(self):
@@ -13,7 +12,7 @@ class KeyExchangeTests(unittest.TestCase):
 
         print("Key A:", key_a.hex())
         print("Key B:", key_b.hex())
-        sys.stdout.flush()
+        self.assertEqual(key_a, key_b)
 
 
     def test_verified_key_exchange(self):

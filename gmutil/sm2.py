@@ -325,7 +325,11 @@ class SM2PublicKey:
         return self._point
 
     def __repr__(self):
-        return SM2Point.repr_uncompressed(self._point).hex().upper()
+        return '({},{})'.format(self._point.x_octets.hex().upper(), self._point.y_octets.hex().upper())
+
+    @property
+    def octets(self) -> bytes:
+        return SM2Point.repr_uncompressed(self._point)
 
     def generate_z(self, uid: bytes = DEFAULT_USER_ID) -> bytes:
         """根据本公钥计算出头部值
@@ -418,7 +422,7 @@ class SM2PublicKey:
                 buffer.extend(c3)
                 return bytes(buffer)
             else:
-                raise ValueError('mode must be C1C3C2 or C1C2C3C')
+                raise ValueError('Mode must be C1C3C2 or C1C2C3C')
 
 
 class SM2PrivateKey:
@@ -480,18 +484,31 @@ class SM2PrivateKey:
             buffer.extend(_i2b(s))
             return bytes(buffer)
 
-    def decrypt(self, cipher_text: bytes) -> bytes:
+    def decrypt(self, cipher_text: bytes, mode: str = 'C1C3C2') -> bytes:
         """SM2私钥解密
 
         GB/T 32918.4-2016 7 (P4)
         :param cipher_text: 密文
+        :param mode: GB/T 32918.2-2016规定的是C1C3C2格式，有些历史遗留的非标情况是C1C2C3格式
         :return: 明文
         """
-        pivot_1 = 2 * ECC_LEN + 1
-        pivot_2 = pivot_1 + 32
-        c1 = cipher_text[0:pivot_1]
-        c3 = cipher_text[pivot_1:pivot_2]
-        c2 = cipher_text[pivot_2:]
+
+        if mode == 'C1C3C2':
+            pivot_1 = 2 * ECC_LEN + 1
+            pivot_2 = pivot_1 + 32
+            c1 = cipher_text[0:pivot_1]
+            c3 = cipher_text[pivot_1:pivot_2]
+            c2 = cipher_text[pivot_2:]
+        elif mode == 'C1C2C3':
+            pivot_1 = 2 * ECC_LEN + 1
+            pivot_2 = len(cipher_text) - 32
+            c1 = cipher_text[0:pivot_1]
+            c2 = cipher_text[pivot_1:pivot_2]
+            c3 = cipher_text[pivot_2:]
+        else:
+            raise ValueError('Mode must be C1C3C2 or C1C2C3C')
+
+
         p1 = SM2Point.from_bytes(c1)
         logger.debug("[k]G=%s", p1)
         p2 = p1 * self.value
