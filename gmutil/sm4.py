@@ -162,7 +162,6 @@ def sm4_encrypt_block(message: bytes, secret_key: bytes) -> bytes:
     return sm4_function(message, secret_key, True)
 
 
-
 def sm4_decrypt_block(cipher_text: bytes, secret_key: bytes) -> bytes:
     """SM4解密函数
 
