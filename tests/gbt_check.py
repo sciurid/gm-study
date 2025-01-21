@@ -1,5 +1,6 @@
 from unittest import TestCase
 from gmutil import sm3_hash, SM4, sm4_decrypt_block, sm4_encrypt_block
+from gmssl.sm4 import CryptSM4, SM4_ENCRYPT
 
 
 class GBTCheck(TestCase):
@@ -31,3 +32,18 @@ class GBTCheck(TestCase):
             if _ % 10000 == 0:
                 print(_)
         self.assertEqual(cipher_text, bytes.fromhex('595298C7 C6FD271F 0402F804 C33D3F66'))
+
+    def test_sm4_bug(self):
+        key = b'\x00' * 16
+        message = b'\x00' * 15 + b'\x01'
+
+        crypt_sm4 = CryptSM4()
+        crypt_sm4.set_key(key, SM4_ENCRYPT)
+        e = crypt_sm4.crypt_ecb(message)
+        print(e.hex(' '))
+
+        s = sm4_encrypt_block(message, key)
+        print(s.hex(' '))
+
+
+
