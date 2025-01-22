@@ -97,7 +97,7 @@ def round_function(x: List[int], rk: int):
     return x[0] ^ c
 
 
-def expand_round_keys(mk_octets: bytes):
+def expand_round_keys(mk_octets: Union[bytes, bytearray, memoryview]):
     """GB/T 32907-2016 7.3 密钥扩展算法
 
     :param mk_octets 加密密钥，128-bit字节串
@@ -114,7 +114,7 @@ def expand_round_keys(mk_octets: bytes):
     return ks[4:]
 
 
-def _do_sm4_rounds(message: bytes, round_keys: List[int], encrypt: bool = True) -> bytes:
+def _do_sm4_rounds(message: Union[bytes, bytearray, memoryview], round_keys: List[int], encrypt: bool = True) -> bytes:
     """SM4轮函数迭代
 
     GB/T 32907-2016 7.1 加密算法
@@ -136,7 +136,8 @@ def _do_sm4_rounds(message: bytes, round_keys: List[int], encrypt: bool = True) 
     return bytes(buffer)
 
 
-def sm4_function(message: bytes, secret_key: bytes, encrypt: bool = True):
+def sm4_function(message: Union[bytes, bytearray, memoryview], secret_key: Union[bytes, bytearray, memoryview],
+                 encrypt: bool = True):
     """SM4加密和解密函数
 
     适用于一次性加解密的情况，相同密钥反复使用的情况适合使用SM4类
@@ -151,7 +152,8 @@ def sm4_function(message: bytes, secret_key: bytes, encrypt: bool = True):
     return _do_sm4_rounds(message, expand_round_keys(secret_key), encrypt)
 
 
-def sm4_encrypt_block(message: bytes, secret_key: bytes) -> bytes:
+def sm4_encrypt_block(message: Union[bytes, bytearray, memoryview],
+                      secret_key: Union[bytes, bytearray, memoryview]) -> bytes:
     """SM4加密函数
 
     适用于一次性加密的情况，相同密钥反复使用的情况适合使用SM4类
@@ -162,7 +164,8 @@ def sm4_encrypt_block(message: bytes, secret_key: bytes) -> bytes:
     return sm4_function(message, secret_key, True)
 
 
-def sm4_decrypt_block(cipher_text: bytes, secret_key: bytes) -> bytes:
+def sm4_decrypt_block(cipher_text: Union[bytes, bytearray, memoryview],
+                      secret_key: Union[bytes, bytearray, memoryview]) -> bytes:
     """SM4解密函数
 
     适用于一次性解密的情况，相同密钥反复使用的情况适合使用SM4类
@@ -178,9 +181,9 @@ class SM4:
         self._secret_key = secret_key
         self._rks = expand_round_keys(secret_key)
 
-    def encrypt_block(self, message: bytes) -> bytes:
+    def encrypt_block(self, message: Union[bytes, bytearray, memoryview]) -> bytes:
         return _do_sm4_rounds(message, self._rks, True)
 
-    def decrypt_block(self, message: bytes) -> bytes:
+    def decrypt_block(self, message: Union[bytes, bytearray, memoryview]) -> bytes:
         return _do_sm4_rounds(message, self._rks, False)
 

@@ -1,8 +1,5 @@
 from unittest import TestCase
-from gmutil import sm3_hash, SM4, sm4_decrypt_block, sm4_encrypt_block, p_add
-from gmssl.sm4 import CryptSM4, SM4_ENCRYPT
-from gmutil.padding import pkcs7_padding, length_prefixed_padding, bit_based_padding
-
+from gmutil import *
 
 class GBTCheck(TestCase):
     def test_sm3(self):
@@ -34,7 +31,6 @@ class GBTCheck(TestCase):
                 print(_)
         self.assertEqual(cipher_text, bytes.fromhex('595298C7 C6FD271F 0402F804 C33D3F66'))
 
-
     def test_padding(self):
         sample_0 = b''
         sample_1 = bytes.fromhex('00112233445566778899')
@@ -44,17 +40,24 @@ class GBTCheck(TestCase):
         padding_11 = bytes.fromhex('00112233445566778899060606060606')
         padding_12 = bytes.fromhex('00112233445566778899aabbccddeeff10101010101010101010101010101010')
 
-        self.assertEqual(pkcs7_padding(sample_0, 128), padding_10)
-        self.assertEqual(pkcs7_padding(sample_1, 128), padding_11)
-        self.assertEqual(pkcs7_padding(sample_2, 128), padding_12)
+        self.assertEqual(pkcs7_pad(sample_0, 128), padding_10)
+        self.assertEqual(pkcs7_unpad(padding_10, 128), sample_0)
+        self.assertEqual(pkcs7_pad(sample_1, 128), padding_11)
+        self.assertEqual(pkcs7_unpad(padding_11, 128), sample_1)
+        self.assertEqual(pkcs7_pad(sample_2, 128), padding_12)
+        self.assertEqual(pkcs7_unpad(padding_12, 128), sample_2)
 
         padding_20 = bytes.fromhex('80000000000000000000000000000000')
         padding_21 = bytes.fromhex('00112233445566778899800000000000')
-        padding_22 = bytes.fromhex('00112233445566778899aabbccddeeff80000000000000000000000000000000')
+        padding_22 = bytes.fromhex('00112233445566778899aabbccddeeff'
+                                   '80000000000000000000000000000000')
 
-        self.assertEqual(bit_based_padding(sample_0, 128), padding_20)
-        self.assertEqual(bit_based_padding(sample_1, 128), padding_21)
-        self.assertEqual(bit_based_padding(sample_2, 128), padding_22)
+        self.assertEqual(bit_based_pad(sample_0, 128), padding_20)
+        self.assertEqual(bit_based_unpad(padding_20, 128), sample_0)
+        self.assertEqual(bit_based_pad(sample_1, 128), padding_21)
+        self.assertEqual(bit_based_unpad(padding_21, 128), sample_1)
+        self.assertEqual(bit_based_pad(sample_2, 128), padding_22)
+        self.assertEqual(bit_based_unpad(padding_22, 128), sample_2)
 
         padding_30 = bytes.fromhex('00' * 32)
         padding_31 = bytes.fromhex('0000000000000000000000000000005000112233445566778899000000000000')
@@ -64,6 +67,34 @@ class GBTCheck(TestCase):
         self.assertEqual(length_prefixed_padding(sample_0, 128), padding_30)
         self.assertEqual(length_prefixed_padding(sample_1, 128), padding_31)
         self.assertEqual(length_prefixed_padding(sample_2, 128), padding_32)
+
+    SECRET_KEY = bytes.fromhex('2B7E151628AED2A6ABF7158809CF4F3C')
+    IV = bytes.fromhex('000102030405060708090A0B0C0D0E0F')
+    MESSAGE = bytes.fromhex('6BC1BEE22E409F96E93D7E117393172A'
+                            'AE2D8A571E03AC9C9EB76FAC45AF8E51'
+                            '30C81C46A35CE411E5FBC1191A0A52EF'
+                            'F69F2445DF4F9B17AD2B417BE66C3710')
+    def test_sm4_ecb(self):
+        sm4 = SM4(GBTCheck.SECRET_KEY)
+        ecb = ECB(sm4.encrypt_block, 128, None)
+
+        cipher_text = bytearray()
+        for i in range(4):
+            cipher_block = ecb.update(GBTCheck.MESSAGE[i * 16: (i + 1) * 16])
+            cipher_text.extend(cipher_block)
+            print(cipher_block.hex())
+        cipher_block = ecb.finalize()
+        cipher_text.extend(cipher_block)
+        print(cipher_block.hex())
+
+        ecb = ECB(sm4.decrypt_block, 128, None)
+        restored = bytearray()
+        for i in range(4):
+            restore_block = ecb.update(cipher_text[i * 16: (i + 1) * 16])
+            restored.extend(restore_block)
+            print(restore_block.hex())
+
+
 
 
 

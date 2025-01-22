@@ -1,41 +1,147 @@
 from typing import Union
 
-def pkcs7_padding(data: Union[bytes, bytearray], block_size: int) -> Union[bytes, bytearray]:
+
+class PKCS7Padding:
     """
     PKCS#7填充方法，与GB/T 17964-2021的C.2相同。
     """
-    if not (0 < block_size < 2048):
-        raise ValueError('分组大小必须大于0小于2048/Block size should be between 0 and 2048 exclusive')
-    if block_size % 8 != 0:
-        raise ValueError('分组大小必须为8的倍数/Block size should be a multiple of 8')
+    def __init__(self, block_size: int, mode_padding: bool = True):
+        super().__init__()
+        if not (0 < block_size < 2048):
+            raise ValueError('分组大小必须大于0小于2048/Block size should be between 0 and 2048 exclusive')
+        if block_size % 8 != 0:
+            raise ValueError('分组大小必须为8的倍数/Block size should be a multiple of 8')
+        self._block_size = block_size
+        self._block_byte_len = block_size // 8
+        self._buffer = bytearray()
+        self._mode_padding = mode_padding
 
-    block_byte_len = block_size // 8
-    padding_bytes = block_byte_len - len(data) % block_byte_len
+    def update(self, in_octets: Union[bytes, bytearray, memoryview]):
+        self._buffer.extend(in_octets)
+        buffer_len = len(self._buffer)
+        if buffer_len == 0:
+            return b''
 
-    result = bytearray(data) if isinstance(data, bytes) else data
-    padding = int.to_bytes(padding_bytes, byteorder='big', signed=False) * padding_bytes
-    result.extend(padding)
+        if self._mode_padding:
+            out_len = (buffer_len // self._block_byte_len) * self._block_byte_len
+            out_octets = bytes(self._buffer[:out_len])
+            self._buffer = self._buffer[out_len:]
+            return out_octets
+        else:
+            out_len = (buffer_len - 1) // self._block_byte_len - 1
+            if out_len <= 0:
+                return b''
 
-    return result
+            out_octets = bytes(self._buffer[:out_len])
+            self._buffer = self._buffer[out_len:]
+            return out_octets
+
+    def finalize(self):
+        if self._mode_padding:
+            buffer_len = len(self._buffer)
+            padding_byte_len = self._block_byte_len - buffer_len % self._block_byte_len
+            self._buffer.extend([padding_byte_len] * padding_byte_len)
+            out_octets = bytes(self._buffer)
+            self._buffer = None
+            return bytes(out_octets)
+        else:
+            if len(self._buffer) % self._block_byte_len != 0:
+                raise ValueError("经过填充的数据长度不是分组长度的整数倍"
+                                 "/Length of padded data is not a multiple of block size")
+            padding_len = self._buffer[-1]
+            for i in range(-padding_len, 0):
+                if self._buffer[i] != padding_len:
+                    raise ValueError("填充数据格式错误/Padded data is mal-formatted.")
+            return self._buffer[0:-padding_len]
 
 
-def bit_based_padding(data: Union[bytes, bytearray], block_size: int) -> Union[bytes, bytearray]:
+def pkcs7_pad(data: Union[bytes, bytearray, memoryview], block_size: int) -> Union[bytes, bytearray]:
+    padding = PKCS7Padding(128, True)
+    out_octets = bytearray()
+    out_octets.extend(padding.update(data))
+    out_octets.extend(padding.finalize())
+    return out_octets
+
+
+def pkcs7_unpad(data: Union[bytes, bytearray, memoryview], block_size: int) -> Union[bytes, bytearray]:
+    padding = PKCS7Padding(128, False)
+    out_octets = bytearray()
+    out_octets.extend(padding.update(data))
+    out_octets.extend(padding.finalize())
+    return out_octets
+
+
+class BitBasedPadding:
     """
 
     GB/T 15852.1-2020 (ISO/IEC 9797-1）中规定的填充方法2，与PKCS#7填充方法，与GB/T 17964-2021的C.3相同。
     """
-    if not (0 < block_size < 2048):
-        raise ValueError('分组大小必须大于0小于2048/Block size should between 0 and 2048 exclusive')
-    if block_size % 8 != 0:
-        raise ValueError('分组大小必须为8的倍数/Block size should be a multiple of 8')
+    def __init__(self, block_size: int, mode_padding: bool = True):
+        super().__init__()
+        if not (0 < block_size < 2048):
+            raise ValueError('分组大小必须大于0小于2048/Block size should be between 0 and 2048 exclusive')
+        if block_size % 8 != 0:
+            raise ValueError('分组大小必须为8的倍数/Block size should be a multiple of 8')
+        self._block_size = block_size
+        self._block_byte_len = block_size // 8
+        self._buffer = bytearray()
+        self._mode_padding = mode_padding
 
-    block_byte_len = block_size // 8
-    zero_byte_len = block_byte_len - (len(data) % block_byte_len) - 1
-    padding = b'\x80' + b'\x00' * zero_byte_len
+    def update(self, in_octets: Union[bytes, bytearray, memoryview]):
+        self._buffer.extend(in_octets)
+        buffer_len = len(self._buffer)
+        if buffer_len == 0:
+            return b''
 
-    result = bytearray(data) if isinstance(data, bytes) else data
-    result.extend(padding)
-    return result
+        if self._mode_padding:
+            out_len = (buffer_len // self._block_byte_len) * self._block_byte_len
+            out_octets = bytes(self._buffer[:out_len])
+            self._buffer = self._buffer[out_len:]
+            return out_octets
+        else:
+            out_len = ((buffer_len - 1) // self._block_byte_len) * self._block_byte_len
+            if out_len <= 0:
+                return b''
+
+            out_octets = bytes(self._buffer[:out_len])
+            self._buffer = self._buffer[out_len:]
+            return out_octets
+
+    def finalize(self):
+        if self._mode_padding:
+            self._buffer.append(0x80)
+            buffer_len = len(self._buffer)
+            padding_byte_len = self._block_byte_len - buffer_len % self._block_byte_len
+            self._buffer.extend([0] * padding_byte_len)
+            out_octets = bytes(self._buffer)
+            self._buffer = None
+            return bytes(out_octets)
+        else:
+            buffer_len = len(self._buffer)
+            if buffer_len % self._block_byte_len != 0:
+                raise ValueError("经过填充的数据长度不是分组长度的整数倍"
+                                 "/Length of padded data is not a multiple of block size")
+            for i in range(-1, -buffer_len-1, -1):
+                if self._buffer[i] == 0x80:
+                    return bytes(self._buffer[:i])
+            else:
+                raise ValueError("填充数据格式错误/Padded data is mal-formatted.")
+
+
+def bit_based_pad(data: Union[bytes, bytearray, memoryview], block_size: int) -> Union[bytes, bytearray]:
+    padding = BitBasedPadding(128, True)
+    out_octets = bytearray()
+    out_octets.extend(padding.update(data))
+    out_octets.extend(padding.finalize())
+    return out_octets
+
+
+def bit_based_unpad(data: Union[bytes, bytearray, memoryview], block_size: int) -> Union[bytes, bytearray]:
+    padding = BitBasedPadding(128, False)
+    out_octets = bytearray()
+    out_octets.extend(padding.update(data))
+    out_octets.extend(padding.finalize())
+    return out_octets
 
 
 def length_prefixed_padding(data: Union[bytes, bytearray], block_size: int, unused_bit_num:int = 0) -> Union[bytes, bytearray]:
