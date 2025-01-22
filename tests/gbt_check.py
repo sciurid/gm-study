@@ -1,6 +1,7 @@
 from unittest import TestCase
-from gmutil import sm3_hash, SM4, sm4_decrypt_block, sm4_encrypt_block
+from gmutil import sm3_hash, SM4, sm4_decrypt_block, sm4_encrypt_block, p_add
 from gmssl.sm4 import CryptSM4, SM4_ENCRYPT
+from gmutil.padding import pkcs7_padding, length_prefixed_padding, bit_based_padding
 
 
 class GBTCheck(TestCase):
@@ -33,17 +34,37 @@ class GBTCheck(TestCase):
                 print(_)
         self.assertEqual(cipher_text, bytes.fromhex('595298C7 C6FD271F 0402F804 C33D3F66'))
 
-    def test_sm4_bug(self):
-        key = b'\x00' * 16
-        message = b'\x00' * 15 + b'\x01'
 
-        crypt_sm4 = CryptSM4()
-        crypt_sm4.set_key(key, SM4_ENCRYPT)
-        e = crypt_sm4.crypt_ecb(message)
-        print(e.hex(' '))
+    def test_padding(self):
+        sample_0 = b''
+        sample_1 = bytes.fromhex('00112233445566778899')
+        sample_2 = bytes.fromhex('00112233445566778899aabbccddeeff')
 
-        s = sm4_encrypt_block(message, key)
-        print(s.hex(' '))
+        padding_10 = bytes.fromhex('10' * 16)
+        padding_11 = bytes.fromhex('00112233445566778899060606060606')
+        padding_12 = bytes.fromhex('00112233445566778899aabbccddeeff10101010101010101010101010101010')
+
+        self.assertEqual(pkcs7_padding(sample_0, 128), padding_10)
+        self.assertEqual(pkcs7_padding(sample_1, 128), padding_11)
+        self.assertEqual(pkcs7_padding(sample_2, 128), padding_12)
+
+        padding_20 = bytes.fromhex('80000000000000000000000000000000')
+        padding_21 = bytes.fromhex('00112233445566778899800000000000')
+        padding_22 = bytes.fromhex('00112233445566778899aabbccddeeff80000000000000000000000000000000')
+
+        self.assertEqual(bit_based_padding(sample_0, 128), padding_20)
+        self.assertEqual(bit_based_padding(sample_1, 128), padding_21)
+        self.assertEqual(bit_based_padding(sample_2, 128), padding_22)
+
+        padding_30 = bytes.fromhex('00' * 32)
+        padding_31 = bytes.fromhex('0000000000000000000000000000005000112233445566778899000000000000')
+        padding_32 = bytes.fromhex('0000000000000000000000000000008000112233445566778899aabbccddeeff'
+                                   '00000000000000000000000000000000')
+
+        self.assertEqual(length_prefixed_padding(sample_0, 128), padding_30)
+        self.assertEqual(length_prefixed_padding(sample_1, 128), padding_31)
+        self.assertEqual(length_prefixed_padding(sample_2, 128), padding_32)
+
 
 
 
