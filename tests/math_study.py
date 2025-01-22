@@ -1,5 +1,6 @@
 from unittest import TestCase
-
+import secrets
+from gmutil import *
 
 
 class PolynomialOperation(TestCase):
@@ -70,6 +71,21 @@ class PolynomialOperation(TestCase):
                 print(s, len(field))
                 break
             field.add(s)
+
+    def test_gf_mul(self):
+
+        for i in range(128):
+            u = secrets.randbits(8)
+            v = secrets.randbits(8)
+
+            # assert mul_8_2(u, v) == mul_8_1(u, v)
+
+            r1 = int.to_bytes(mul_gf_2_128(u, v), length=16, byteorder='big', signed=False)
+            print(r1.hex(' '))
+            r2 = int.to_bytes(mul_gf_2_128_alt(u, v, False), length=16, byteorder='big', signed=False)
+            print(r2.hex(' '))
+            self.assertEqual(r1, r2)
+
 
 
 
