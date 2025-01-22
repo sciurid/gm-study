@@ -1,7 +1,18 @@
 from typing import Union
 
 
-class PKCS7Padding:
+class SuffixPadding:
+    def __init__(self, block_size: int, mode_padding: bool = True):
+        pass
+
+    def update(self, in_octets: Union[bytes, bytearray, memoryview]):
+        raise NotImplementedError()
+
+    def finalize(self):
+        raise NotImplementedError()
+
+
+class PKCS7Padding(SuffixPadding):
     """
     PKCS#7填充方法，与GB/T 17964-2021的C.2相同。
     """
@@ -71,7 +82,7 @@ def pkcs7_unpad(data: Union[bytes, bytearray, memoryview], block_size: int) -> U
     return out_octets
 
 
-class BitBasedPadding:
+class BitBasedPadding(SuffixPadding):
     """
 
     GB/T 15852.1-2020 (ISO/IEC 9797-1）中规定的填充方法2，与PKCS#7填充方法，与GB/T 17964-2021的C.3相同。

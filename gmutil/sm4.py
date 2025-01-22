@@ -2,11 +2,13 @@
 
 from typing import *
 import logging
+from .padding import *
+from .mode import *
 
 logger = logging.getLogger(__name__)
 
 # GB/T 32907-2016 6.2 表1
-SM4_SBOX = [
+_SM4_SBOX = [
     0xd6, 0x90, 0xe9, 0xfe, 0xcc, 0xe1, 0x3d, 0xb7, 0x16, 0xb6, 0x14, 0xc2, 0x28, 0xfb, 0x2c,
     0x05, 0x2b, 0x67, 0x9a, 0x76, 0x2a, 0xbe, 0x04, 0xc3, 0xaa, 0x44, 0x13, 0x26, 0x49, 0x86,
     0x06, 0x99, 0x9c, 0x42, 0x50, 0xf4, 0x91, 0xef, 0x98, 0x7a, 0x33, 0x54, 0x0b, 0x43, 0xed,
@@ -28,10 +30,10 @@ SM4_SBOX = [
 ]
 
 # GB/T 32907-2016 7.3 密钥扩展算法 b) 系统参数FK
-SM4_FK = [0xa3b1bac6, 0x56aa3350, 0x677d9197, 0xb27022dc]
+_SM4_FK = [0xa3b1bac6, 0x56aa3350, 0x677d9197, 0xb27022dc]
 
 # GB/T 32907-2016 7.3 密钥扩展算法 c) 固定参数CK
-SM4_CK = [
+_SM4_CK = [
     0x00070e15, 0x1c232a31, 0x383f464d, 0x545b6269,
     0x70777e85, 0x8c939aa1, 0xa8afb6bd, 0xc4cbd2d9,
     0xe0e7eef5, 0xfc030a11, 0x181f262d, 0x343b4249,
@@ -41,15 +43,6 @@ SM4_CK = [
     0xa0a7aeb5, 0xbcc3cad1, 0xd8dfe6ed, 0xf4fb0209,
     0x10171e25, 0x2c333a41, 0x484f565d, 0x646b7279
 ]
-
-SM4_ENCRYPT = 0
-SM4_DECRYPT = 1
-
-NoPadding = 0
-ZERO = 1
-ISO9797M2 = 2
-PKCS7 = 3
-PBOC = 4
 
 
 def _i32_to_i8l(n: int) -> List[int]:
@@ -92,7 +85,7 @@ def round_function(x: List[int], rk: int):
     """
     assert len(x) == 4
     a = x[1] ^ x[2] ^x[3] ^ rk
-    b = _i8l_to_i32([SM4_SBOX[n] for n in _i32_to_i8l(a)])  # GB/T 32907-2016 6.2 合成置换T a) 非线性变换tau
+    b = _i8l_to_i32([_SM4_SBOX[n] for n in _i32_to_i8l(a)])  # GB/T 32907-2016 6.2 合成置换T a) 非线性变换tau
     c = b ^ _rls(b, 2) ^ _rls(b, 10) ^ _rls(b, 18) ^ _rls(b, 24)  # GB/T 32907-2016 6.2 合成置换T b) 线性变换L
     return x[0] ^ c
 
@@ -104,10 +97,10 @@ def expand_round_keys(mk_octets: Union[bytes, bytearray, memoryview]):
     """
     assert len(mk_octets) == 16
     mk = [int.from_bytes(mk_octets[i: i + 4], byteorder='big', signed=False) for i in range(0, 16, 4)]  # 转换成4个32位整数
-    ks = [mk_i ^ fk_i for mk_i, fk_i in zip(mk, SM4_FK)] # 式（6）
+    ks = [mk_i ^ fk_i for mk_i, fk_i in zip(mk, _SM4_FK)] # 式（6）
     for i in range(32):
-        a = ks[i + 1] ^ ks[i + 2] ^ ks[i + 3] ^ SM4_CK[i]
-        b = _i8l_to_i32([SM4_SBOX[n] for n in _i32_to_i8l(a)])  # GB/T 32907-2016 6.2 合成置换T a) 非线性变换tau
+        a = ks[i + 1] ^ ks[i + 2] ^ ks[i + 3] ^ _SM4_CK[i]
+        b = _i8l_to_i32([_SM4_SBOX[n] for n in _i32_to_i8l(a)])  # GB/T 32907-2016 6.2 合成置换T a) 非线性变换tau
         c = b ^ _rls(b, 13) ^ _rls(b, 23)
         ks.append(ks[i] ^ c)  # 式（7）
 

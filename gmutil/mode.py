@@ -74,7 +74,6 @@ class CBC:
             self._buffer = self._buffer[i * self._block_byte_len:]
         return out_octets
 
-
     def update(self, in_octets: bytes) -> bytes:
         self._buffer.extend(in_octets)
         return bytes(self._process_buffer())
