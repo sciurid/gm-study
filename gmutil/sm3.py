@@ -1,11 +1,11 @@
 from typing import Union, Tuple, Sequence
 
 # GB/T 32905-2016 4.1 初始值
-IV = (0x7380166f, 0x4914b2b9, 0x172442d7, 0xda8a0600, 0xa96f30bc, 0x163138aa, 0xe38dee4d, 0xb0fb0e4e)
+_SM3_IV = (0x7380166f, 0x4914b2b9, 0x172442d7, 0xda8a0600, 0xa96f30bc, 0x163138aa, 0xe38dee4d, 0xb0fb0e4e)
 
 
 # GB/T 32905-2016 4.2 常量
-TJ = tuple(0x79cc4519 if 0 <= j < 16 else 0x7a879d8a for j in range (0, 64))
+_SM3_TJ = tuple(0x79cc4519 if 0 <= j < 16 else 0x7a879d8a for j in range (0, 64))
 
 
 def rls_32(x: int, n: int):
@@ -120,7 +120,7 @@ def cf(v_i: tuple, b_i: bytes) -> tuple:
     a, b, c, d, e, f, g, h = v_i
     for j in range(0, 64):
         ss1 = rls_32(
-            mod_adds_32(rls_32(a, 12), e, rls_32(TJ[j], j % 32)), 7)
+            mod_adds_32(rls_32(a, 12), e, rls_32(_SM3_TJ[j], j % 32)), 7)
         ss2 = ss1 ^ rls_32(a, 12)
         tt1 = mod_adds_32(sm3_ff_j(a, b, c, j), d, ss2, w_[j])
         tt2 = mod_adds_32(sm3_gg_j(e, f, g, j), h, ss1, w[j])
@@ -139,7 +139,7 @@ def cf(v_i: tuple, b_i: bytes) -> tuple:
 
 def sm3_hash(message: Union[bytes, bytearray]) -> bytes:
     padded = pad(message)
-    v_0 = IV
+    v_0 = _SM3_IV
     for i in range(0, len(padded), 64):
         v_n = cf(v_0, padded[i:i + 64])
         v_0 = v_n
@@ -188,7 +188,7 @@ if __name__ == '__main__':
 
     n = 1
     for i in range(0, 1):
-        v_n = cf(IV, padded)
+        v_n = cf(_SM3_IV, padded)
         print([int.to_bytes(v, length=4, byteorder='big', signed=False).hex()
                            for v in v_n])
 

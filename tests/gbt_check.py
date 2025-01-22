@@ -76,7 +76,7 @@ class GBTCheck(TestCase):
                             'F69F2445DF4F9B17AD2B417BE66C3710')
     def test_sm4_ecb(self):
         sm4 = SM4(GBTCheck.SECRET_KEY)
-        ecb = ECB(sm4.encrypt_block, 128, None)
+        ecb = ECB(sm4.encrypt_block, 128)
 
         cipher_text = bytearray()
         for i in range(4):
@@ -87,13 +87,33 @@ class GBTCheck(TestCase):
         cipher_text.extend(cipher_block)
         print(cipher_block.hex())
 
-        ecb = ECB(sm4.decrypt_block, 128, None)
+        ecb = ECB(sm4.decrypt_block, 128)
         restored = bytearray()
         for i in range(4):
             restore_block = ecb.update(cipher_text[i * 16: (i + 1) * 16])
             restored.extend(restore_block)
             print(restore_block.hex())
 
+
+    def test_sm4_ccb(self):
+        sm4 = SM4(GBTCheck.SECRET_KEY)
+        cbc = CBC(sm4.encrypt_block, 128, iv=GBTCheck.IV, is_encrypt=True)
+
+        cipher_text = bytearray()
+        for i in range(4):
+            cipher_block = cbc.update(GBTCheck.MESSAGE[i * 16: (i + 1) * 16])
+            cipher_text.extend(cipher_block)
+            print(cipher_block.hex())
+        cipher_block = cbc.finalize()
+        cipher_text.extend(cipher_block)
+        print(cipher_block.hex())
+
+        cbc = CBC(sm4.decrypt_block, 128, iv=GBTCheck.IV, is_encrypt=False)
+        restored = bytearray()
+        for i in range(4):
+            restore_block = cbc.update(cipher_text[i * 16: (i + 1) * 16])
+            restored.extend(restore_block)
+            print(restore_block.hex())
 
 
 
