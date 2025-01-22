@@ -6,8 +6,6 @@ from gmutil import sm4_encrypt_block
 
 MASK_128 = (0x01 << 128) - 1
 
-
-
 V_MASK_START = 0x01 << 127
 REMAINDER = 0b11100001 << 120
 
@@ -57,32 +55,7 @@ def mul_on_gf2_128(u: int, v: int):
             z = ((z << 1) ^ 0b10000111) & MASK_128
     return w
 
-MASK_8 = ((0x01 << 8) - 1)
 
-def mul_on_gf2_8(u: int, v: int):
-    assert u.bit_length() <= 8
-    assert v.bit_length() <= 8
-
-    # {m(x) = x^8 + x^4 + x^3 + x^2 + x + 1}
-    w = 0  # sum
-    z = u  # {u \mul 2^i}
-
-    # print('Z:{:08b}'.format(z))
-    for _ in range(8):
-        # print(_)
-        # print('V:{:08b}'.format(v))
-        if v & 0x01 != 0:
-            w ^= z
-        # print('W:{:08b}'.format(w))
-        v >>= 1
-
-
-        if z >> 7 == 0:  # b8 !=0 时，需要模{m(x)}
-            z = (z << 1)
-        else:
-            z = ((z << 1) ^ 0b00011101) & MASK_8
-        # print('Z:{:08b}'.format(z))
-    return w
 
 
 def ghash(h: int, w: bytes, z: bytes) -> int:
