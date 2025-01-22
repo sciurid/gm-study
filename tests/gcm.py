@@ -1,76 +1,30 @@
-import os
-import secrets
-import random
-from gmutil import mul_gf_2_128
-
-from gmutil import sm4_encrypt_block
-
-def ghash(h: int, w: bytes, z: bytes) -> int:
-    assert h.bit_length() <= 128
-
-    def _split_pad(s):
-        l = len(s)
-        blocks = []
-        for i in range(0, l, 16):
-            blocks.append(int.from_bytes(s[i: i + 16], byteorder='big', signed=False))
-        if l % 16 != 0:
-            blocks.append(int.from_bytes(s[(l % 16) - l:], byteorder='big', signed=False) << (8 * l % 16))
-        return blocks
-
-    ws = _split_pad(w)
-    zs = _split_pad(z)
-
-    x = 0
-    for i in range(0, len(ws)):
-        # x = mul_on_gf2_128(x ^ ws[i], h)
-        x = mul_gf_2_128(x ^ ws[i], h)
-    for i in range(0, len(zs)):
-        # x = mul_on_gf2_128(x ^ zs[i], h)
-        x = mul_gf_2_128(x ^ zs[i], h)
-    # last_block = (int.to_bytes(len(w) * 8, length=8, byteorder='big', signed=False)
-    #               + int.to_bytes(len(z) * 8, length=8, byteorder='big', signed=False))
-    last_block = ((len(w) * 8) << 64) | (len(z) * 8)
-    # x = mul_on_gf2_128(x ^ last_block, h)
-    x = mul_gf_2_128(x ^ last_block, h)
-
-    return x
+from gmutil import gmac
+from unittest import TestCase
 
 
-def uint_to_bytes(n: int) -> bytes:
-    return n.to_bytes(length=16, byteorder='big', signed=False)
+class GMACTest(TestCase):
+    def test_gbt_sample(self):
+        mine = gmac(key=b'\x00' * 16, message=b'', n=b'\x00' * 12)
+        ref = bytes.fromhex('23 2f 0c fe 30 8b 49 ea 6f c8 82 29 b5 dc 85 8d')
+        self.assertEqual(mine, ref)
+
+        mine = gmac(
+            key=bytes.fromhex('fe ff e9 92 86 65 73 1c 6d 6a 8f 94 67 30 83 08'),
+            message=bytes.fromhex('fe ed fa ce de ad be ef fe ed fa ce de ad be ef'),
+            n=bytes.fromhex('ca fe ba be fa ce db ad de ca f8 88')
+        )
+
+        ref = bytes.fromhex('9d 63 25 70 f9 30 64 26 4a 20 91 8e 30 81 b4 cd')
+        self.assertEqual(ref, mine)
+
+        mine = gmac(
+            key=bytes.fromhex('fe ff e9 92 86 65 73 1c 6d 6a 8f 94 67 30 83 08'),
+            message=bytes.fromhex('fe ed fa ce de ad be ef fe ed fa ce de ad be ef'
+                                  'ab ad da d2 42 83 1e c2 21 77 74 24 4b 72 21 b7'),
+            n=bytes.fromhex('ca fe ba be fa ce db ad de ca f8 88')
+        )
+
+        ref = bytes.fromhex('1e ea eb 66 9e 96 bd 05 9b d9 92 91 23 03 0e 78')
+        self.assertEqual(ref, mine)
 
 
-def bytes_to_uint(b: bytes) -> int:
-    assert len(b) <= 16
-    return int.from_bytes(b, byteorder='big', signed=False)
-
-
-def gcm(key, message, n ):
-    print("-" * 60)
-    print("Key:  ", key.hex())
-    print("KHV:  ", '00' * 16)
-    key_h = sm4_encrypt_block(b'\x00' * 16, key)
-    key_h_int = bytes_to_uint(key_h)
-    print("Key_H:", key_h.hex())
-    h = ghash(key_h_int, message, b'')
-    print("H:    ", uint_to_bytes(h).hex())
-    y_0 = (n + b'\x00' * 3 + b'\x01') if len(n) == 12 else ghash(key_h_int, b'', n)
-    print("Y0:   ", y_0.hex())
-
-    enc_y0 = sm4_encrypt_block(message=y_0, secret_key=key)
-    print("ENC:  ", enc_y0.hex(' '))
-
-    mac = h ^ bytes_to_uint(enc_y0)
-    print("MAC:  ", uint_to_bytes(mac).hex(' '))
-    return uint_to_bytes(mac)
-
-
-gcm(b'\x00' * 16, b'', b'\x00' * 12)
-mine = gcm(
-    key = bytes.fromhex('fe ff e9 92 86 65 73 1c 6d 6a 8f 94 67 30 83 08'),
-    message=bytes.fromhex('fe ed fa ce de ad be ef fe ed fa ce de ad be ef'),
-    n = bytes.fromhex('ca fe ba be fa ce db ad de ca f8 88')
-)
-
-ref = bytes.fromhex('9d 63 25 70 f9 30 64 26 4a 20 91 8e 30 81 b4 cd')
-assert mine == ref

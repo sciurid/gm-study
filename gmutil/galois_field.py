@@ -4,6 +4,7 @@ MASK_128_BIT = 0x01 << 128
 MASK_127_BIT = 0x01 << 127
 REMAINDER = 0b11100001 << 120  # 多项式模的剩余项，即 1 + x + x^2 + x^7
 
+
 def mul_gf_2_128(u: int, v: int, big_endian=False) -> int:
     """伽罗华域GF(2^128)上的多项式乘法。
 
