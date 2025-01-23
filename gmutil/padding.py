@@ -85,7 +85,7 @@ def pkcs7_unpad(data: Union[bytes, bytearray, memoryview], block_size: int) -> U
 class BitBasedPadding(SuffixPadding):
     """
 
-    GB/T 15852.1-2020 (ISO/IEC 9797-1）中规定的填充方法2，与PKCS#7填充方法，与GB/T 17964-2021的C.3相同。
+    GB/T 15852.1-2020 (ISO/IEC 9797-1）中规定的填充方法2，与GB/T 17964-2021的C.3相同。
     """
     def __init__(self, block_size: int, mode_padding: bool = True):
         super().__init__(block_size=block_size)

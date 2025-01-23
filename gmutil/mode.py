@@ -121,12 +121,13 @@ class CTR(Mode):
         self._block_mask = (1 << block_size) - 1
 
     def _counter_mask(self, in_octets: Union[bytes, bytearray, memoryview]) -> bytes:
+        assert len(in_octets) <= self._block_byte_len
         logger.debug('-' * 20 + 'BLOCK' + '-' * 20)
         logger.debug('Plain:  {}'.format(in_octets.hex()))
         logger.debug('Counter:{}'.format(self._last_counter.hex()))
         mask = self._function(self._last_counter)
         logger.debug('Mask:   {}'.format(mask.hex()))
-        out_octet = xor_on_bytes(in_octets, mask)
+        out_octet = xor_on_bytes(in_octets, mask[0:len(in_octets)])
         logger.debug('Cipher: {}'.format(out_octet.hex()))
 
         self._last_counter = (((int.from_bytes(self._last_counter, byteorder='big', signed=False) + 1)
@@ -153,7 +154,6 @@ class CTR(Mode):
     def finalize(self) -> bytes:
         out_octets = self._process_buffer()  # 以防万一
         if len(self._buffer) != 0:
-            raise ValueError('数据长度不是分组长度的整数倍，需要填充/'
-                             'Length of data is not a multiple of block size, so padding is required')
+            out_octets.extend(self._counter_mask(self._buffer))
         return bytes(out_octets)
 
