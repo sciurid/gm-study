@@ -1,11 +1,14 @@
 import unittest
 import logging
 
-from THUCard.realtime_verify import SECRET_KEY
 from gmutil.mode import ECB, CBC, CTR
 from gmutil.sm4 import sm4_encrypt_block, sm4_decrypt_block, SM4
+from os.path import join, abspath, pardir
+
+logging.basicConfig(level=logging.DEBUG)
 
 logger = logging.getLogger(__name__)
+
 
 class SM4TestCase(unittest.TestCase):
     SECRET_KEY = bytes.fromhex('2B7E151628AED2A6ABF7158809CF4F3C')
@@ -135,11 +138,56 @@ class SM4TestCase(unittest.TestCase):
 
         self.assertEqual(SM4TestCase.MESSAGE, restored)
 
+    def test_sm4(self):
+        sm4 = SM4(SM4TestCase.SECRET_KEY)
+        cipher_text = sm4.encrypt(message=SM4TestCase.MESSAGE, mode='ECB', padding='pkcs7')
+        print(cipher_text.hex())
+        restored = sm4.decrypt(cipher_text=cipher_text, mode='ECB', padding='pkcs7')
+        print(restored.hex())
+        self.assertEqual(SM4TestCase.MESSAGE, restored)
 
-    def test_encrypt_text(self):
-        with open('DFB.txt', 'rb') as f:
-            cipher = SM4(secret_key=SECRET_KEY)
-            while data := r.read():
-                cipher.encrypt()
+        cipher_text = sm4.encrypt(message=SM4TestCase.MESSAGE, mode='CBC', padding='pkcs7', iv=SM4TestCase.IV)
+        print(cipher_text.hex())
+        restored = sm4.decrypt(cipher_text=cipher_text, mode='CBC', padding='pkcs7', iv=SM4TestCase.IV)
+        print(restored.hex())
+        self.assertEqual(SM4TestCase.MESSAGE, restored)
+
+        cipher_text = sm4.encrypt(message=SM4TestCase.MESSAGE, mode='CTR', padding=None, iv=SM4TestCase.IV)
+        print(cipher_text.hex())
+        restored = sm4.decrypt(cipher_text=cipher_text, mode='CTR', padding=None, iv=SM4TestCase.IV)
+        print(restored.hex())
+        self.assertEqual(SM4TestCase.MESSAGE, restored)
+
+    def test_text(self):
+        with open(join(abspath(join(__file__, pardir)), 'DFB.txt'), 'rb') as f:
+            data = f.read()
+
+        sm4 = SM4(SM4TestCase.SECRET_KEY)
+
+        logger.debug('=' * 20 + "SM4 ECB PKCS7" + '=' * 20)
+        logger.debug('Secret   :' + SM4TestCase.SECRET_KEY.hex())
+        cipher_text = sm4.encrypt(message=data, mode='ECB', padding='pkcs7')
+        logger.debug('Encrypted:' + cipher_text.hex())
+
+        restored = sm4.decrypt(cipher_text, mode='ECB', padding='pkcs7')
+        self.assertEqual(data, restored)
+
+        logger.debug('=' * 20 + "SM4 CBC PKCS7" + '=' * 20)
+        logger.debug('Secret   :' + SM4TestCase.SECRET_KEY.hex())
+        logger.debug('IV       :' + SM4TestCase.IV.hex())
+        cipher_text = sm4.encrypt(message=data, mode='CBC', padding='pkcs7', iv=SM4TestCase.IV)
+        logger.debug('Encrypted:' + cipher_text.hex())
+
+        restored = sm4.decrypt(cipher_text, mode='CBC', padding='pkcs7', iv=SM4TestCase.IV)
+        self.assertEqual(data, restored)
+
+        logger.debug('=' * 20 + "SM4 CTR PKCS7" + '=' * 20)
+        logger.debug('Secret   :' + SM4TestCase.SECRET_KEY.hex())
+        logger.debug('IV       :' + SM4TestCase.IV.hex())
+        cipher_text = sm4.encrypt(message=data, mode='CTR', padding='pkcs7', iv=SM4TestCase.IV)
+        logger.debug('Encrypted:' + cipher_text.hex())
+
+        restored = sm4.decrypt(cipher_text, mode='CTR', padding='pkcs7', iv=SM4TestCase.IV)
+        self.assertEqual(data, restored)
 
         

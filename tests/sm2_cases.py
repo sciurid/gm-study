@@ -43,7 +43,6 @@ class SM2TestCase(unittest.TestCase):
         print("Key B:", key_b.hex())
         self.assertEqual(key_a, key_b)
 
-
     def test_verified_key_exchange(self):
         user_a = SM2KeyExchangePartyA(uid='user-a'.encode())
         user_b = SM2KeyExchangePartyB(uid='user-b'.encode())

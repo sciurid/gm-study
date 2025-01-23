@@ -51,11 +51,11 @@ def _i32_to_i8l(n: int) -> List[int]:
     return [((n >> i) & 0xff) for i in range(24, -1, -8)]
 
 
-def _i8l_to_i32(l: List[int]) -> int:
+def _i8l_to_i32(list_uint8: List[int]) -> int:
     """4个8位无符号整数转为32为无符号整数"""
-    assert len(l) == 4
+    assert len(list_uint8) == 4
     n = 0
-    for p in l:
+    for p in list_uint8:
         assert 0 <= p < 256
         n = (n << 8) | p
     return n
@@ -77,7 +77,7 @@ def _rls(x: Union[int, List[int]], t: int) -> Union[int, List[int]]:
     return _i32_to_i8l(n)
 
 
-def round_function(x: List[int], rk: int):
+def _round_function(x: List[int], rk: int):
     """GB/T 32907-2016 6.1 轮函数结构
 
     :param x 本轮输入，4个32位无符号整数
@@ -85,20 +85,20 @@ def round_function(x: List[int], rk: int):
     :return 本轮输出，32为无符号整数
     """
     assert len(x) == 4
-    a = x[1] ^ x[2] ^x[3] ^ rk
+    a = x[1] ^ x[2] ^ x[3] ^ rk
     b = _i8l_to_i32([_SM4_SBOX[n] for n in _i32_to_i8l(a)])  # GB/T 32907-2016 6.2 合成置换T a) 非线性变换tau
     c = b ^ _rls(b, 2) ^ _rls(b, 10) ^ _rls(b, 18) ^ _rls(b, 24)  # GB/T 32907-2016 6.2 合成置换T b) 线性变换L
     return x[0] ^ c
 
 
-def expand_round_keys(mk_octets: Union[bytes, bytearray, memoryview]):
+def _expand_round_keys(mk_octets: Union[bytes, bytearray, memoryview]):
     """GB/T 32907-2016 7.3 密钥扩展算法
 
     :param mk_octets 加密密钥，128-bit字节串
     """
     assert len(mk_octets) == 16
     mk = [int.from_bytes(mk_octets[i: i + 4], byteorder='big', signed=False) for i in range(0, 16, 4)]  # 转换成4个32位整数
-    ks = [mk_i ^ fk_i for mk_i, fk_i in zip(mk, _SM4_FK)] # 式（6）
+    ks = [mk_i ^ fk_i for mk_i, fk_i in zip(mk, _SM4_FK)]  # 式（6）
     for i in range(32):
         a = ks[i + 1] ^ ks[i + 2] ^ ks[i + 3] ^ _SM4_CK[i]
         b = _i8l_to_i32([_SM4_SBOX[n] for n in _i32_to_i8l(a)])  # GB/T 32907-2016 6.2 合成置换T a) 非线性变换tau
@@ -118,9 +118,9 @@ def _do_sm4_rounds(message: Union[bytes, bytearray, memoryview], round_keys: Lis
     """
     xs = [int.from_bytes(message[i: i + 4], byteorder='big', signed=False) for i in range(0, 16, 4)]
     # for i, x in enumerate(xs):
-        # logger.debug('x_%02d=%s', i, hex(x))
+    #   logger.debug('x_%02d=%s', i, hex(x))
     for i in range(32):
-        x_i = round_function(xs[i:i + 4], round_keys[i if encrypt else (31 - i)])  # 加密时正向使用轮密钥，解密时反向使用轮密钥
+        x_i = _round_function(xs[i:i + 4], round_keys[i if encrypt else (31 - i)])  # 加密时正向使用轮密钥，解密时反向使用轮密钥
         # logger.debug('rk_%02d=%s, x_%02d=%s', i, hex(round_keys[i]), i, hex(xs[i]))
         xs.append(x_i)
 
@@ -143,7 +143,7 @@ def sm4_function(message: Union[bytes, bytearray, memoryview], secret_key: Union
     assert len(message) == 16
     assert len(secret_key) == 16
 
-    return _do_sm4_rounds(message, expand_round_keys(secret_key), encrypt)
+    return _do_sm4_rounds(message, _expand_round_keys(secret_key), encrypt)
 
 
 def sm4_encrypt_block(message: Union[bytes, bytearray, memoryview],
@@ -173,7 +173,9 @@ class SM4:
     """SM4加解密类，适用于相同密钥反复使用的情况"""
     def __init__(self, secret_key: bytes):
         self._secret_key = secret_key
-        self._rks = expand_round_keys(secret_key)
+        self._rks = _expand_round_keys(secret_key)
+
+    BLOCK_SIZE = 128
 
     def encrypt_block(self, message: Union[bytes, bytearray, memoryview]) -> bytes:
         return _do_sm4_rounds(message, self._rks, True)
@@ -183,17 +185,10 @@ class SM4:
 
     def encrypt(self, message: Union[bytes, bytearray, memoryview],
                 mode: Optional[Literal['ECB', 'CBC', 'CTR']] = None,
-                padding: Optional[Literal['pkcs7', 'iso7816', 'iso9797m2']] = None,
+                padding: Optional[Literal['pkcs7', 'iso7816', 'iso9797m2', '']] = None,
                 iv: Union[bytes, bytearray, memoryview] = None) -> bytes:
 
-        if padding is None:
-            _padding = None
-        elif padding == 'pkcs7':
-            _padding = PKCS7Padding(block_size=128)
-        elif padding == 'iso7816' or padding == 'iso9797m2':
-            _padding = BitBasedPadding(block_size=128)
-        else:
-            raise ValueError(f'未知的填充方法/Unknown padding: {padding}')
+        _padding = get_padding(padding, SM4.BLOCK_SIZE)
 
         if mode is None:
             _mode = None
@@ -222,14 +217,7 @@ class SM4:
                 mode: Optional[Literal['ECB', 'CBC', 'CTR']] = None,
                 padding: Optional[Literal['pkcs7', 'iso7816', 'iso9797m2']] = None,
                 iv: Union[bytes, bytearray, memoryview] = None) -> bytes:
-        if padding is None:
-            _padding = None
-        elif padding == 'pkcs7':
-            _padding = PKCS7Padding(block_size=128, mode_padding=False)
-        elif padding == 'iso7816' or padding == 'iso9797m2':
-            _padding = BitBasedPadding(block_size=128, mode_padding=False)
-        else:
-            raise ValueError(f'未知的填充方法/Unknown padding: {padding}')
+        _padding = get_padding(padding, SM4.BLOCK_SIZE)
 
         if mode is None:
             _mode = None

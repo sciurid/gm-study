@@ -168,32 +168,6 @@ def sm3_kdf(data: Union[bytes, bytearray], m_len: int):
     return bytes(res[0:m_len])
 
 
-if __name__ == '__main__':
-    message = bytes.fromhex('61626364' * 16)
-    print(sm3_hash(message).hex())
-
-    padded = pad(message)
-    print("Padded:", len(padded), padded.hex())
-    w, w_ = expand(padded)
-    print("Expanded:")
-    for i in range(0, 68):
-        print(f'{w[i]:08x}', end=' ')
-        if i % 8 == 7:
-            print('')
-    print(' ')
-    for i in range(0, 64):
-        print(f'{w_[i]:08x}', end=' ')
-        if i % 8 == 7:
-            print('')
-
-    n = 1
-    for i in range(0, 1):
-        v_n = cf(_SM3_IV, padded)
-        print([int.to_bytes(v, length=4, byteorder='big', signed=False).hex()
-                           for v in v_n])
-
-    print(sm3_hash(message).hex())
-
 
 
 

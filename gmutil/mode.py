@@ -1,5 +1,5 @@
 from typing import Callable, Union, Optional
-from .calc import xor_on_bytes
+from .calculation import xor_on_bytes
 import logging
 
 logger = logging.getLogger(__name__)
@@ -122,13 +122,13 @@ class CTR(Mode):
 
     def _counter_mask(self, in_octets: Union[bytes, bytearray, memoryview]) -> bytes:
         assert len(in_octets) <= self._block_byte_len
-        logger.debug('-' * 20 + 'BLOCK' + '-' * 20)
-        logger.debug('Plain:  {}'.format(in_octets.hex()))
-        logger.debug('Counter:{}'.format(self._last_counter.hex()))
+        # logger.debug('-' * 20 + 'BLOCK' + '-' * 20)
+        # logger.debug('Plain:  {}'.format(in_octets.hex()))
+        # logger.debug('Counter:{}'.format(self._last_counter.hex()))
         mask = self._function(self._last_counter)
-        logger.debug('Mask:   {}'.format(mask.hex()))
+        # logger.debug('Mask:   {}'.format(mask.hex()))
         out_octet = xor_on_bytes(in_octets, mask[0:len(in_octets)])
-        logger.debug('Cipher: {}'.format(out_octet.hex()))
+        # logger.debug('Cipher: {}'.format(out_octet.hex()))
 
         self._last_counter = (((int.from_bytes(self._last_counter, byteorder='big', signed=False) + 1)
                                & self._block_mask)
