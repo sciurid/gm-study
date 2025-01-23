@@ -1,4 +1,4 @@
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union, Literal
 import secrets
 
 
@@ -141,4 +141,29 @@ def square_root_mod_prime(p: int, g: int) -> Optional[int]:
                 return None
 
     raise ValueError(f"Number {p} is not a prime.")
+
+
+def xor_on_bytes(x: Union[bytes, bytearray, memoryview], y: Union[bytes, bytearray, memoryview],
+              byteorder: Literal['big', 'little'] = 'big', signed=False,
+              bytes_or_int: Literal['bytes', 'int'] = 'bytes') -> Union[bytes, int]:
+    x_int = int.from_bytes(x, byteorder=byteorder, signed=signed)
+    y_int = int.from_bytes(y, byteorder=byteorder, signed=signed)
+
+    res = x_int ^ y_int
+    if bytes_or_int == 'bytes':
+        return res.to_bytes(max(len(x), len(y)), byteorder=byteorder, signed=signed)
+    if bytes_or_int == 'int':
+        return res
+
+    raise ValueError('结果类型必须是"bytes"或"int"')
+
+
+
+
+
+
+
+
+
+
 

@@ -2,6 +2,7 @@
 
 from typing import *
 import logging
+
 from .padding import *
 from .mode import *
 
@@ -116,11 +117,11 @@ def _do_sm4_rounds(message: Union[bytes, bytearray, memoryview], round_keys: Lis
     :param encrypt 加密/解密，True表示加密，False表示解密
     """
     xs = [int.from_bytes(message[i: i + 4], byteorder='big', signed=False) for i in range(0, 16, 4)]
-    for i, x in enumerate(xs):
-        logger.debug('x_%02d=%s', i, hex(x))
+    # for i, x in enumerate(xs):
+        # logger.debug('x_%02d=%s', i, hex(x))
     for i in range(32):
         x_i = round_function(xs[i:i + 4], round_keys[i if encrypt else (31 - i)])  # 加密时正向使用轮密钥，解密时反向使用轮密钥
-        logger.debug('rk_%02d=%s, x_%02d=%s', i, hex(round_keys[i]), i, hex(xs[i]))
+        # logger.debug('rk_%02d=%s, x_%02d=%s', i, hex(round_keys[i]), i, hex(xs[i]))
         xs.append(x_i)
 
     buffer = bytearray()
@@ -180,3 +181,75 @@ class SM4:
     def decrypt_block(self, message: Union[bytes, bytearray, memoryview]) -> bytes:
         return _do_sm4_rounds(message, self._rks, False)
 
+    def encrypt(self, message: Union[bytes, bytearray, memoryview],
+                mode: Optional[Literal['ECB', 'CBC', 'CTR']] = None,
+                padding: Optional[Literal['pkcs7', 'iso7816', 'iso9797m2']] = None,
+                iv: Union[bytes, bytearray, memoryview] = None) -> bytes:
+
+        if padding is None:
+            _padding = None
+        elif padding == 'pkcs7':
+            _padding = PKCS7Padding(block_size=128)
+        elif padding == 'iso7816' or padding == 'iso9797m2':
+            _padding = BitBasedPadding(block_size=128)
+        else:
+            raise ValueError(f'未知的填充方法/Unknown padding: {padding}')
+
+        if mode is None:
+            _mode = None
+        elif mode == 'ECB':
+            _mode = ECB(function=self.encrypt_block, block_size=128)
+        elif mode == 'CBC':
+            _mode = CBC(function=self.encrypt_block, block_size=128, iv=iv, is_encrypt=True)
+        elif mode == 'CTR':
+            _mode = CTR(function=self.encrypt_block, block_size=128, iv=iv)
+        else:
+            raise ValueError(f'未知的分组工作模式/Unknown mode name: {mode}')
+
+        out_octets = bytearray()
+
+        if _padding is None:
+            out_octets.extend(_mode.update(message))
+            out_octets.extend(_mode.finalize())
+        else:
+            out_octets.extend(_mode.update(_padding.update(message)))
+            out_octets.extend(_mode.update(_padding.finalize()))
+            out_octets.extend(_mode.finalize())
+
+        return out_octets
+
+    def decrypt(self, cipher_text: Union[bytes, bytearray, memoryview],
+                mode: Optional[Literal['ECB', 'CBC', 'CTR']] = None,
+                padding: Optional[Literal['pkcs7', 'iso7816', 'iso9797m2']] = None,
+                iv: Union[bytes, bytearray, memoryview] = None) -> bytes:
+        if padding is None:
+            _padding = None
+        elif padding == 'pkcs7':
+            _padding = PKCS7Padding(block_size=128, mode_padding=False)
+        elif padding == 'iso7816' or padding == 'iso9797m2':
+            _padding = BitBasedPadding(block_size=128, mode_padding=False)
+        else:
+            raise ValueError(f'未知的填充方法/Unknown padding: {padding}')
+
+        if mode is None:
+            _mode = None
+        elif mode == 'ECB':
+            _mode = ECB(function=self.decrypt_block, block_size=128)
+        elif mode == 'CBC':
+            _mode = CBC(function=self.decrypt_block, block_size=128, iv=iv, is_encrypt=False)
+        elif mode == 'CTR':
+            _mode = CTR(function=self.encrypt_block, block_size=128, iv=iv)
+        else:
+            raise ValueError(f'未知的分组工作模式/Unknown mode name: {mode}')
+
+        out_octets = bytearray()
+
+        if _padding is None:
+            out_octets.extend(_mode.update(cipher_text))
+            out_octets.extend(_mode.finalize())
+        else:
+            out_octets.extend(_padding.update(_mode.update(cipher_text)))
+            out_octets.extend(_padding.update(_mode.finalize()))
+            out_octets.extend(_padding.finalize())
+
+        return out_octets

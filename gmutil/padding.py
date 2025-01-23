@@ -17,7 +17,7 @@ class PKCS7Padding(SuffixPadding):
     PKCS#7填充方法，与GB/T 17964-2021的C.2相同。
     """
     def __init__(self, block_size: int, mode_padding: bool = True):
-        super().__init__()
+        super().__init__(block_size=block_size)
         if not (0 < block_size < 2048):
             raise ValueError('分组大小必须大于0小于2048/Block size should be between 0 and 2048 exclusive')
         if block_size % 8 != 0:
@@ -39,7 +39,7 @@ class PKCS7Padding(SuffixPadding):
             self._buffer = self._buffer[out_len:]
             return out_octets
         else:
-            out_len = (buffer_len - 1) // self._block_byte_len - 1
+            out_len = ((buffer_len - 1) // self._block_byte_len - 1) * self._block_byte_len
             if out_len <= 0:
                 return b''
 
@@ -88,7 +88,7 @@ class BitBasedPadding(SuffixPadding):
     GB/T 15852.1-2020 (ISO/IEC 9797-1）中规定的填充方法2，与PKCS#7填充方法，与GB/T 17964-2021的C.3相同。
     """
     def __init__(self, block_size: int, mode_padding: bool = True):
-        super().__init__()
+        super().__init__(block_size=block_size)
         if not (0 < block_size < 2048):
             raise ValueError('分组大小必须大于0小于2048/Block size should be between 0 and 2048 exclusive')
         if block_size % 8 != 0:

@@ -1,6 +1,7 @@
 from unittest import TestCase
 import secrets
 from gmutil import *
+from datetime import datetime
 
 
 class PolynomialOperation(TestCase):
@@ -85,8 +86,5 @@ class PolynomialOperation(TestCase):
             r2 = int.to_bytes(mul_gf_2_128_alt(u, v, False), length=16, byteorder='big', signed=False)
             print(r2.hex(' '))
             self.assertEqual(r1, r2)
-
-
-
 
 
