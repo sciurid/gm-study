@@ -9,10 +9,10 @@ class Mode:
     def __init__(self) -> None:
         pass
 
-    def update(self, in_octets: Union[bytes, bytearray, memoryview]):
+    def update(self, in_octets: Union[bytes, bytearray, memoryview]) -> bytes:
         raise NotImplementedError()
 
-    def finalize(self):
+    def finalize(self) -> bytes:
         raise NotImplementedError()
 
 
