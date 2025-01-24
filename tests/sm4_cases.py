@@ -200,6 +200,21 @@ class SM4TestCase(unittest.TestCase):
 
         self.assertEqual(SM4TestCase.MESSAGE, restored)
 
+    def test_sm4_xts(self):
+        secret_key = bytes.fromhex('2B7E151628AED2A6ABF7158809CF4F3C')
+        tweak_key = bytes.fromhex('000102030405060708090A0B0C0D0E0F')
+        tweak = bytes.fromhex('F0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF')
+        message = bytes.fromhex('6BC1BEE22E409F96E93D7E117393172A'
+                                'AE2D8A571E03AC9C9EB76FAC45AF8E51'
+                                '30C81C46A35CE411E5FBC1191A0A52EF'
+                                'F69F2445DF4F9B17')
+
+        sm4 = SM4(secret_key)
+        sm4_tweak = SM4(tweak_key)
+        xts = XTS(sm4.encrypt_block, 128, sm4_tweak.encrypt_block, tweak)
+        xts.update(message) + xts.finalize()
+
+
     def test_sm4(self):
         sm4 = SM4(SM4TestCase.SECRET_KEY)
         cipher_text = sm4.encrypt(message=SM4TestCase.MESSAGE, mode='ECB', padding='pkcs7')

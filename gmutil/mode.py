@@ -1,5 +1,5 @@
 from typing import Callable, Union, Optional
-from .calculation import xor_on_bytes
+from .calculation import xor_on_bytes, mul_gf_2_128
 from .commons import Codec
 import logging
 
@@ -250,6 +250,83 @@ class OFB(Codec):
             self._buffer.extend(b'\x00' * (self._output_block_byte_len - buffer_len))
         out_octets = self._process_buffer()
         return bytes(out_octets[0:buffer_len])
+
+
+class XTS:
+    def __init__(self, function: Callable[[Union[bytes, bytearray, memoryview]], bytes], block_size: int,
+                 tweak_enc_func: Callable[[Union[bytes, bytearray, memoryview]], bytes],
+                 tweak: Union[bytes, bytearray, memoryview]):
+        self._tweak_enc_func = tweak_enc_func
+        self._function = function
+
+        if block_size % 8 != 0:
+            raise ValueError('分组大小必须为8的倍数/Block size should be a multiple of 8.')
+        self._block_size = block_size
+        self._block_byte_len = self._block_size // 8
+
+        self._tweak = tweak
+        self._step_mask = tweak_enc_func(self._tweak)
+
+        self._buffer = bytearray()
+
+    POLYNOMIAL_ALPHA: int = 1 << 126
+
+    def _process_block(self, in_block: Union[bytes, bytearray, memoryview]) -> bytes:
+        print(in_block.hex())
+        enc_in = xor_on_bytes(self._step_mask, in_block)
+        print(enc_in.hex())
+        enc_out = self._function(enc_in)
+        print(enc_out.hex())
+        out_block = xor_on_bytes(self._step_mask, enc_out)
+        print(out_block.hex())
+        print()
+
+        self._step_mask = mul_gf_2_128(int.from_bytes(self._step_mask, byteorder='big', signed=False),
+                                       XTS.POLYNOMIAL_ALPHA).to_bytes(length=16, byteorder='big', signed=False)
+
+        return bytes(out_block)
+
+    def _process_buffer(self):
+        out_octets = bytearray()
+        in_octets = memoryview(self._buffer)
+        buffer_len = len(self._buffer)
+        m = 0
+        while m < buffer_len - 2 * self._block_byte_len:  # 至少保留两个分组
+            n = m + self._block_byte_len
+            out_octets.extend(xor_on_bytes(self._step_mask, self._process_block(in_octets[m:n])))
+            m = n
+        self._buffer = self._buffer[m:]
+        return out_octets
+
+    def update(self, octets: Union[bytes, bytearray, memoryview]) -> bytes:
+        self._buffer.extend(octets)
+        return bytes(self._process_buffer())
+
+    def finalize(self) -> bytes:
+        out_octets = self._process_buffer()
+        buffer_len = len(self._buffer)
+        in_octets = memoryview(self._buffer)
+        if buffer_len < self._block_byte_len:
+            raise ValueError('数据长度不足一个分组，需要补齐/Data is shorter than one block, so padding is required.')
+
+        if buffer_len == 2 * self._block_byte_len:
+            out_octets.extend(self._process_block(in_octets[0:self._block_byte_len]))
+            out_octets.extend(self._process_block(in_octets[self._block_byte_len:]))
+        else:
+            d = buffer_len - self._block_byte_len
+            n_d = self._block_byte_len - d
+            c_ql = self._process_block(in_octets[0:self._block_byte_len])
+            ex = bytearray(in_octets[self._block_byte_len:])
+            ex.extend(c_ql[-n_d:])
+            c_q = self._process_block(ex)
+
+            out_octets.extend(c_q)
+            print(c_q.hex())
+            out_octets.extend(c_ql[0:d])
+            print(c_ql[0:d].hex())
+        return bytes(out_octets)
+
+
 
 
 
