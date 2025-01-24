@@ -1,7 +1,7 @@
 import unittest
 import logging
 
-from gmutil.mode import ECB, CBC, CTR
+from gmutil.mode import *
 from gmutil.sm4 import sm4_encrypt_block, sm4_decrypt_block, SM4
 from os.path import join, abspath, pardir
 
@@ -133,6 +133,68 @@ class SM4TestCase(unittest.TestCase):
             restored.extend(restored_block)
             self.assertEqual(restored_block, SM4TestCase.MESSAGE[i * 16: (i + 1) * 16])
         restored_block = ctr.finalize()
+        restored.extend(restored_block)
+        self.assertEqual(b'', restored_block)
+
+        self.assertEqual(SM4TestCase.MESSAGE, restored)
+
+    def test_sm4_cfb8(self):
+        sm4 = SM4(SM4TestCase.SECRET_KEY)
+
+        message = bytes.fromhex('6b c1 be e2 2e 40 9f 96')
+        enc_assertion = bytes.fromhex('bc 98 b6 9c 0b 3a c8 7b')
+
+        cfb = CFB(sm4.encrypt_block, 128, iv=SM4TestCase.IV, is_encrypt=True,
+                  output_block_byte_len=1)
+        logger.debug('=' * 20 + 'CFB8 ENCRYPTION' + '=' * 20)
+        cipher_text = bytearray()
+        for i in range(len(message)):
+            cipher_block = cfb.update(message[i:i+1])
+            cipher_text.extend(cipher_block)
+            self.assertEqual(cipher_block, enc_assertion[i:i+1])
+        cipher_block = cfb.finalize()
+        cipher_text.extend(cipher_block)
+        self.assertEqual(b'', cipher_block)
+
+        cfb = CFB(sm4.encrypt_block, 128, iv=SM4TestCase.IV, is_encrypt=False,
+                  output_block_byte_len=1)
+        logger.debug('=' * 20 + 'CFB8 DECRYPTION' + '=' * 20)
+        for i in range(len(message)):
+            restored_block = cfb.update(cipher_text[i:i+1])
+            cipher_text.extend(cipher_block)
+            self.assertEqual(restored_block, message[i:i+1])
+        restored_block = cfb.finalize()
+        cipher_text.extend(restored_block)
+        self.assertEqual(b'', restored_block)
+
+    def test_sm4_ofb128(self):
+        sm4 = SM4(SM4TestCase.SECRET_KEY)
+        ofb = OFB(sm4.encrypt_block, 128, iv=SM4TestCase.IV, is_encrypt=True, output_byte_len=128)
+
+        logger.debug('=' * 20 + 'CTR ENCRYPTION' + '=' * 20)
+        enc_assertion = ('bc710d762d070b26361da82b54565e46',
+                         '07a0c62834740ad3240d239125e11621',
+                         'd476b21cc9f04951f0741d2ef9e09498',
+                         '1584fc142bf13aa626b82f9d7d076cce')
+        cipher_text = bytearray()
+        for i in range(4):
+            cipher_block = ofb.update(SM4TestCase.MESSAGE[i * 16: (i + 1) * 16])
+            cipher_text.extend(cipher_block)
+            # print(cipher_block.hex())
+            self.assertEqual(cipher_block, bytes.fromhex(enc_assertion[i]))
+        cipher_block = ofb.finalize()
+        cipher_text.extend(cipher_block)
+        self.assertEqual(b'', cipher_block)
+        print(cipher_text.hex())
+
+        logger.debug('=' * 20 + 'CTR DECRYPTION' + '=' * 20)
+        ofb = OFB(sm4.encrypt_block, 128, iv=SM4TestCase.IV, is_encrypt=False, output_byte_len=128)
+        restored = bytearray()
+        for i in range(4):
+            restored_block = ofb.update(cipher_text[i * 16: (i + 1) * 16])
+            restored.extend(restored_block)
+            self.assertEqual(restored_block, SM4TestCase.MESSAGE[i * 16: (i + 1) * 16])
+        restored_block = ofb.finalize()
         restored.extend(restored_block)
         self.assertEqual(b'', restored_block)
 

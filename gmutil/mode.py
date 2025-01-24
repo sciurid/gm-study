@@ -1,22 +1,12 @@
 from typing import Callable, Union, Optional
 from .calculation import xor_on_bytes
+from .commons import Codec
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-class Mode:
-    def __init__(self) -> None:
-        pass
-
-    def update(self, in_octets: Union[bytes, bytearray, memoryview]) -> bytes:
-        raise NotImplementedError()
-
-    def finalize(self) -> bytes:
-        raise NotImplementedError()
-
-
-class ECB(Mode):
+class ECB(Codec):
     def __init__(self, function: Callable[[Union[bytes, bytearray, memoryview]], bytes], block_size: int):
         super().__init__()
         self._function = function
@@ -48,7 +38,7 @@ class ECB(Mode):
         return bytes(out_octets)
 
 
-class CBC(Mode):
+class CBC(Codec):
     def __init__(self, function: Callable[[Union[bytes, bytearray, memoryview]], bytes], block_size: int,
                  iv: Union[bytes, bytearray, memoryview], is_encrypt: bool):
         super().__init__()
@@ -100,7 +90,7 @@ class CBC(Mode):
         return bytes(out_octets)
 
 
-class CTR(Mode):
+class CTR(Codec):
     def __init__(self, function: Callable[[Union[bytes, bytearray, memoryview]], bytes], block_size: int,
                  iv: Union[bytes, bytearray, memoryview]):
         super().__init__()
@@ -140,11 +130,12 @@ class CTR(Mode):
         buffer_len = len(self._buffer)
         if buffer_len >= self._block_byte_len:
             in_octets = memoryview(self._buffer)
-            i = 0
-            while i + self._block_byte_len <= buffer_len:
-                out_octets.extend(self._counter_mask(in_octets[i:i + self._block_byte_len]))
-                i += self._block_byte_len
-            self._buffer = self._buffer[i * self._block_byte_len:]
+            m = 0
+            while m <= buffer_len:
+                n = m + self._block_byte_len
+                out_octets.extend(self._counter_mask(in_octets[m:n]))
+                m = n
+            self._buffer = self._buffer[m:]
         return out_octets
 
     def update(self, in_octets: bytes) -> bytes:
@@ -156,4 +147,109 @@ class CTR(Mode):
         if len(self._buffer) != 0:
             out_octets.extend(self._counter_mask(self._buffer))
         return bytes(out_octets)
+
+
+class CFB(Codec):
+    def __init__(self, function: Callable[[Union[bytes, bytearray, memoryview]], bytes], block_size: int,
+                 iv: Union[bytes, bytearray, memoryview], is_encrypt: bool,
+                 output_block_byte_len: Optional[int] = None, val_k_byte_len: Optional[int] = None):
+        self._function = function
+
+        if block_size % 8 != 0:
+            raise ValueError('分组大小必须为8的倍数/Block size should be a multiple of 8.')
+        if len(iv) * 8 < block_size:
+            raise ValueError('初始向量IV必须不小于分组长度/Initial vector should be of block size.')
+
+        self._block_size = block_size
+        self._block_byte_len = block_size // 8
+        self._iv = iv
+        self._iv_byte_len = len(self._iv)
+        self._is_encrypt = is_encrypt
+
+        self._output_block_byte_len = output_block_byte_len if output_block_byte_len else self._block_byte_len
+        self._val_k_byte_len = val_k_byte_len if val_k_byte_len else self._output_block_byte_len
+        self._buffer = bytearray()
+        self._fb = bytearray(iv)
+
+    def _process_buffer(self):
+        out_octets = bytearray()
+        in_octets = memoryview(self._buffer)
+        buffer_len = len(self._buffer)
+        m = 0
+        while m < buffer_len:
+            val_x = memoryview(self._fb)[0:self._block_byte_len]
+            val_y = memoryview(self._function(val_x))[0:self._output_block_byte_len]
+
+            if self._is_encrypt:
+                n = m + self._output_block_byte_len
+                val_c = xor_on_bytes(val_y, in_octets[m:n])
+                m = n
+                out_octets.extend(val_c)
+            else:
+                n = m + self._output_block_byte_len
+                val_c = memoryview(self._buffer)[m:n]
+                m = n
+                out_octets.extend(xor_on_bytes(val_y, val_c))
+
+            self._fb.extend(b'\xff' * (self._val_k_byte_len - self._output_block_byte_len))
+            self._fb.extend(val_c)
+            self._fb = self._fb[-self._iv_byte_len:]
+
+        in_octets.release()
+        self._buffer = self._buffer[m:]
+        return out_octets
+
+    def update(self, octets: Union[bytes, bytearray, memoryview]) -> bytes:
+        self._buffer.extend(octets)
+        return bytes(self._process_buffer())
+
+    def finalize(self) -> bytes:
+        buffer_len = len(self._buffer)
+        if buffer_len % self._output_block_byte_len != 0:
+            self._buffer.extend(b'\x00' * (self._output_block_byte_len - buffer_len))
+        out_octets = self._process_buffer()
+        return bytes(out_octets[0:buffer_len])
+
+
+class OFB(Codec):
+    def __init__(self, function: Callable[[Union[bytes, bytearray, memoryview]], bytes], block_size: int,
+                 iv: Union[bytes, bytearray, memoryview], is_encrypt: bool, output_byte_len: Optional[int] = None):
+
+        self._function = function
+        self._block_size = block_size
+        self._block_byte_len = self._block_size // 8
+
+        self._output_block_byte_len = output_byte_len if output_byte_len else self._block_byte_len
+        self._iv = iv
+        self._fb = iv
+        self._buffer = bytearray()
+
+    def _process_buffer(self):
+        out_octets = bytearray()
+        in_octets = memoryview(self._buffer)
+        buffer_len = len(self._buffer)
+        m = 0
+        while m < buffer_len:
+            val_y = self._function(self._fb)
+            n = m + self._output_block_byte_len
+            out_octets.extend(xor_on_bytes(memoryview(val_y)[0:self._output_block_byte_len], in_octets[m:n]))
+            m = n
+            self._fb = val_y
+
+        in_octets.release()
+        self._buffer = self._buffer[m:]
+        return out_octets
+
+    def update(self, octets: Union[bytes, bytearray, memoryview]) -> bytes:
+        self._buffer.extend(octets)
+        return bytes(self._process_buffer())
+
+    def finalize(self) -> bytes:
+        buffer_len = len(self._buffer)
+        if buffer_len % self._output_block_byte_len != 0:
+            self._buffer.extend(b'\x00' * (self._output_block_byte_len - buffer_len))
+        out_octets = self._process_buffer()
+        return bytes(out_octets[0:buffer_len])
+
+
 
