@@ -255,7 +255,7 @@ class OFB(Codec):
 class XTS:
     def __init__(self, function: Callable[[Union[bytes, bytearray, memoryview]], bytes], block_size: int,
                  tweak_enc_func: Callable[[Union[bytes, bytearray, memoryview]], bytes],
-                 tweak: Union[bytes, bytearray, memoryview]):
+                 tweak: Union[bytes, bytearray, memoryview], is_encrypt: bool):
         self._tweak_enc_func = tweak_enc_func
         self._function = function
 
@@ -266,23 +266,27 @@ class XTS:
 
         self._tweak = tweak
         self._step_mask = tweak_enc_func(self._tweak)
+        self._is_encrypt = is_encrypt
 
         self._buffer = bytearray()
 
     POLYNOMIAL_ALPHA: int = 1 << 126
 
-    def _process_block(self, in_block: Union[bytes, bytearray, memoryview]) -> bytes:
-        print(in_block.hex())
-        enc_in = xor_on_bytes(self._step_mask, in_block)
-        print(enc_in.hex())
-        enc_out = self._function(enc_in)
-        print(enc_out.hex())
-        out_block = xor_on_bytes(self._step_mask, enc_out)
-        print(out_block.hex())
-        print()
+    @staticmethod
+    def _next_step_mask(polynomial_mask: bytes):
+        return mul_gf_2_128(int.from_bytes(polynomial_mask, byteorder='big', signed=False),
+                            XTS.POLYNOMIAL_ALPHA).to_bytes(length=16, byteorder='big', signed=False)
 
-        self._step_mask = mul_gf_2_128(int.from_bytes(self._step_mask, byteorder='big', signed=False),
-                                       XTS.POLYNOMIAL_ALPHA).to_bytes(length=16, byteorder='big', signed=False)
+    def _process_block(self, in_block: Union[bytes, bytearray, memoryview]) -> bytes:
+        print('In block :', in_block.hex())
+        print('Mask     :', self._step_mask.hex())
+        enc_in = xor_on_bytes(self._step_mask, in_block)
+        print('Encrypt I:', enc_in.hex())
+        enc_out = self._function(enc_in)
+        print('Encrypt O:', enc_out.hex())
+        out_block = xor_on_bytes(self._step_mask, enc_out)
+        print('Out block:', out_block.hex())
+        print()
 
         return bytes(out_block)
 
@@ -293,7 +297,8 @@ class XTS:
         m = 0
         while m < buffer_len - 2 * self._block_byte_len:  # 至少保留两个分组
             n = m + self._block_byte_len
-            out_octets.extend(xor_on_bytes(self._step_mask, self._process_block(in_octets[m:n])))
+            out_octets.extend(self._process_block(in_octets[m:n]))
+            self._step_mask = XTS._next_step_mask(self._step_mask)
             m = n
         self._buffer = self._buffer[m:]
         return out_octets
@@ -315,15 +320,27 @@ class XTS:
         else:
             d = buffer_len - self._block_byte_len
             n_d = self._block_byte_len - d
-            c_ql = self._process_block(in_octets[0:self._block_byte_len])
-            ex = bytearray(in_octets[self._block_byte_len:])
-            ex.extend(c_ql[-n_d:])
-            c_q = self._process_block(ex)
+            if self._is_encrypt:
+                c_ql = self._process_block(in_octets[0:self._block_byte_len])
+                self._step_mask = XTS._next_step_mask(self._step_mask)
+                ex = bytearray(in_octets[self._block_byte_len:])
+                ex.extend(c_ql[-n_d:])
+                c_q = self._process_block(ex)
 
-            out_octets.extend(c_q)
-            print(c_q.hex())
-            out_octets.extend(c_ql[0:d])
-            print(c_ql[0:d].hex())
+                out_octets.extend(c_q)
+                print(c_q.hex())
+                out_octets.extend(c_ql[0:d])
+                print(c_ql[0:d].hex())
+            else:
+                mask_ql = self._step_mask
+                self._step_mask = XTS._next_step_mask(self._step_mask)
+                p_q = self._process_block(in_octets[0:self._block_byte_len])
+                ex = bytearray(in_octets[self._block_byte_len:])
+                ex.extend(p_q[-n_d:])
+                self._step_mask = mask_ql
+                p_ql = self._process_block(ex)
+                out_octets.extend(p_ql)
+                out_octets.extend(p_q[0:d])
         return bytes(out_octets)
 
 
