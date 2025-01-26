@@ -1,8 +1,9 @@
+import secrets
 import unittest
 import logging
 
 from gmutil.mode import *
-from gmutil.sm4 import sm4_encrypt_block, sm4_decrypt_block, SM4
+from gmutil.sm4 import sm4_encrypt_block, sm4_decrypt_block, SM4, SM4Encryptor, SM4Decryptor
 from os.path import join, abspath, pardir
 
 logging.basicConfig(level=logging.DEBUG)
@@ -241,57 +242,61 @@ class SM4TestCase(unittest.TestCase):
 
         self.assertEqual(message.hex(), restored.hex())
 
+    def test_sm4_simple_case(self):
+        plain_text = '飞流直下三千尺，疑似银河落九天。'.encode('utf-8')
+        print(plain_text.hex())
+        secret_key = secrets.randbits(SM4.BLOCK_SIZE).to_bytes(16, byteorder='big', signed=False)
+        iv = secrets.randbits(SM4.BLOCK_SIZE).to_bytes(16, byteorder='big', signed=False)
+        print(secret_key.hex())
+        print(iv.hex())
 
-    def test_sm4(self):
-        sm4 = SM4(SM4TestCase.SECRET_KEY)
-        cipher_text = sm4.encrypt(message=SM4TestCase.MESSAGE, mode='ECB', padding='pkcs7')
+        encryptor = SM4Encryptor(secret_key, 'CBC', 'PKCS7', iv=iv)
+        cipher_text = encryptor.update(plain_text) + encryptor.finalize()
         print(cipher_text.hex())
-        restored = sm4.decrypt(cipher_text=cipher_text, mode='ECB', padding='pkcs7')
-        print(restored.hex())
-        self.assertEqual(SM4TestCase.MESSAGE, restored)
 
-        cipher_text = sm4.encrypt(message=SM4TestCase.MESSAGE, mode='CBC', padding='pkcs7', iv=SM4TestCase.IV)
-        print(cipher_text.hex())
-        restored = sm4.decrypt(cipher_text=cipher_text, mode='CBC', padding='pkcs7', iv=SM4TestCase.IV)
-        print(restored.hex())
-        self.assertEqual(SM4TestCase.MESSAGE, restored)
+        decryptor = SM4Decryptor(secret_key, 'CBC', 'PKCS7', iv=iv)
+        restored = decryptor.update(cipher_text) + decryptor.finalize()
+        print(restored.decode('utf-8'))
 
-        cipher_text = sm4.encrypt(message=SM4TestCase.MESSAGE, mode='CTR', padding=None, iv=SM4TestCase.IV)
-        print(cipher_text.hex())
-        restored = sm4.decrypt(cipher_text=cipher_text, mode='CTR', padding=None, iv=SM4TestCase.IV)
-        print(restored.hex())
-        self.assertEqual(SM4TestCase.MESSAGE, restored)
+    def do_test_text(self, data, secret_key, iv_tweak, tweak_key, mode_name, padding_name):
+        logger.debug('=' * 20 + f"SM4 {mode_name} {padding_name}" + '=' * 20)
+        tweak_algorithm = SM4(tweak_key)
+        encryptor = SM4Encryptor(secret_key, mode_name, padding_name,
+                                 iv=iv_tweak, tweak=iv_tweak, tweak_algorithm=tweak_algorithm)
+        decryptor = SM4Decryptor(secret_key, mode_name, padding_name,
+                                 iv=iv_tweak, tweak=iv_tweak, tweak_algorithm=tweak_algorithm)
+        logger.debug('Secret   :' + secret_key.hex())
+        cipher_text = encryptor.update(data) + encryptor.finalize()
+        logger.debug('Encrypted:' + cipher_text.hex())
+
+        restored = decryptor.update(cipher_text) + decryptor.finalize()
+        print(restored.decode('utf-8'))
+        self.assertEqual(data, restored)
 
     def test_text(self):
         with open(join(abspath(join(__file__, pardir)), 'DFB.txt'), 'rb') as f:
             data = f.read()
 
-        sm4 = SM4(SM4TestCase.SECRET_KEY)
+        secret_key = secrets.randbits(SM4.BLOCK_SIZE).to_bytes(16, byteorder='big', signed=False)
+        tweak_key = secrets.randbits(SM4.BLOCK_SIZE).to_bytes(16, byteorder='big', signed=False)
+        iv_tweak = secrets.randbits(SM4.BLOCK_SIZE).to_bytes(16, byteorder='big', signed=False)
 
-        logger.debug('=' * 20 + "SM4 ECB PKCS7" + '=' * 20)
-        logger.debug('Secret   :' + SM4TestCase.SECRET_KEY.hex())
-        cipher_text = sm4.encrypt(message=data, mode='ECB', padding='pkcs7')
-        logger.debug('Encrypted:' + cipher_text.hex())
+        # ECB
+        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'ECB', 'PKCS7')
 
-        restored = sm4.decrypt(cipher_text, mode='ECB', padding='pkcs7')
-        self.assertEqual(data, restored)
+        # CBC
+        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'CBC', 'PKCS7')
 
-        logger.debug('=' * 20 + "SM4 CBC PKCS7" + '=' * 20)
-        logger.debug('Secret   :' + SM4TestCase.SECRET_KEY.hex())
-        logger.debug('IV       :' + SM4TestCase.IV.hex())
-        cipher_text = sm4.encrypt(message=data, mode='CBC', padding='pkcs7', iv=SM4TestCase.IV)
-        logger.debug('Encrypted:' + cipher_text.hex())
+        # OFB
+        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'CFB8', 'PKCS7')
+        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'CFB128', 'PKCS7')
 
-        restored = sm4.decrypt(cipher_text, mode='CBC', padding='pkcs7', iv=SM4TestCase.IV)
-        self.assertEqual(data, restored)
+        # OFB
+        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'OFB8', 'PKCS7')
+        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'OFB128', 'PKCS7')
 
-        logger.debug('=' * 20 + "SM4 CTR PKCS7" + '=' * 20)
-        logger.debug('Secret   :' + SM4TestCase.SECRET_KEY.hex())
-        logger.debug('IV       :' + SM4TestCase.IV.hex())
-        cipher_text = sm4.encrypt(message=data, mode='CTR', padding='pkcs7', iv=SM4TestCase.IV)
-        logger.debug('Encrypted:' + cipher_text.hex())
+        # CTR
+        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'CTR', 'PKCS7')
 
-        restored = sm4.decrypt(cipher_text, mode='CTR', padding='pkcs7', iv=SM4TestCase.IV)
-        self.assertEqual(data, restored)
-
-        
+        # XTS
+        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'XTS', 'PKCS7')

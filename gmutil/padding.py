@@ -14,6 +14,17 @@ class PKCS7Padding(Codec):
     与GB/T 17964-2021 C.2相同。
     """
 
+    def __init__(self, block_size: int, mode_padding: bool):
+        super().__init__()
+        if not (0 < block_size < 2048):
+            raise PaddingException('分组大小必须大于0小于2048/Block size should be between 0 and 2048 exclusive')
+        if block_size % 8 != 0:
+            raise PaddingException('分组大小必须为8的倍数/Block size should be a multiple of 8')
+        self._block_size = block_size
+        self._block_byte_len = block_size // 8
+        self._buffer = bytearray()
+        self._mode_padding = mode_padding
+
     def _process_block(self) -> bytes:
         buffer_byte_len = len(self._buffer)
         if buffer_byte_len == 0:
@@ -24,17 +35,6 @@ class PKCS7Padding(Codec):
         out_octets = bytes(memoryview(self._buffer)[0:out_byte_len])
         self._buffer = self._buffer[out_byte_len:]
         return out_octets
-
-    def __init__(self, block_size: int, mode_padding):
-        super().__init__()
-        if not (0 < block_size < 2048):
-            raise PaddingException('分组大小必须大于0小于2048/Block size should be between 0 and 2048 exclusive')
-        if block_size % 8 != 0:
-            raise PaddingException('分组大小必须为8的倍数/Block size should be a multiple of 8')
-        self._block_size = block_size
-        self._block_byte_len = block_size // 8
-        self._buffer = bytearray()
-        self._mode_padding = mode_padding
 
     def update(self, in_octets: Union[bytes, bytearray, memoryview]) -> bytes:
         self._buffer.extend(in_octets)
@@ -307,14 +307,17 @@ def zero_unpad(data: Union[bytes, bytearray], block_size: int) -> bytes:
     return bytes(out_octets)
 
 
-def get_padding(name: Optional[str], block_size: int):
-    if name is None:
+def get_padding(padding_name: Optional[str], block_size: int, mode_padding: bool):
+    padding_name = padding_name.upper()
+    if padding_name is None:
         return None
-    elif name == 'pkcs7':
-        return PKCS7Padding(block_size=block_size)
-    elif name == 'iso7816-4' or name == 'iso9797m2' or name == 'one-and-zeros':
-        return OneAndZerosPadding(block_size=block_size)
-    elif name == 'iso9797m3' or name == 'length-prefixed':
-        return LengthPrefixedPadding(block_size=block_size)
+    elif padding_name == 'PKCS7':
+        return PKCS7Padding(block_size=block_size, mode_padding=mode_padding)
+    elif padding_name == 'ISO7816-4' or padding_name == 'ISO9797M2' or padding_name == 'ONE_AND_ZEROS':
+        return OneAndZerosPadding(block_size=block_size, mode_padding=mode_padding)
+    elif padding_name == 'ISO9797M3' or padding_name == 'LENGTH_PREFIXED':
+        return LengthPrefixedPadding(block_size=block_size, mode_padding=mode_padding)
+    elif padding_name == 'ISO9797M1' or padding_name == 'ZERO':
+        return ZeroPadding(block_size=block_size, mode_padding=mode_padding)
     else:
-        raise ValueError(f'未知的填充方法/Unknown padding: {name}')
+        raise ValueError(f'未知的填充方法/Unknown padding: {padding_name}')

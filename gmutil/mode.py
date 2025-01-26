@@ -103,10 +103,10 @@ class ECB(Mode):
         def _process_block(self, in_block: Union[bytes, bytearray, memoryview]) -> bytes:
             return self._mode._algorithm.decrypt_block(in_block)
 
-    def encryptor(self):
+    def encryptor(self) -> Encryptor:
         return ECB.Encryptor(self)
 
-    def decryptor(self):
+    def decryptor(self) -> Decryptor:
         return ECB.Decryptor(self)
 
 
@@ -118,8 +118,8 @@ class CBC(Mode):
         :param iv: 初始向量IV，由加解密双方约定或者由加密方提供给解密方
         :param algorithm: 分组密码算法
         """
-        super().__init__(algorithm)
         self._iv = iv
+        super().__init__(algorithm)
         self._last_cipher_block = iv
 
     def set_algorithm(self, algorithm: BlockCipherAlgorithm):
@@ -149,10 +149,10 @@ class CBC(Mode):
             self._last_cipher_block = in_block  # 保留本组输入（密文）作为用于下一组处理
             return decrypted
 
-    def encryptor(self) -> Codec:
+    def encryptor(self) -> Encryptor:
         return CBC.Encryptor(self)
 
-    def decryptor(self) -> Codec:
+    def decryptor(self) -> Decryptor:
         return CBC.Decryptor(self)
 
 
@@ -175,7 +175,7 @@ class CTR(Mode):
             self._last_counter = mode._iv
             self._block_byte_len = mode._block_byte_len
             self._algorithm = mode._algorithm
-            self._overflow = 1 << mode._algorithm.block_size
+            self._overflow = 1 << mode._algorithm.block_byte_len
 
         def _process_block(self, in_block: Union[bytes, bytearray, memoryview]) -> bytes:
             mask = self._algorithm.encrypt_block(self._last_counter)  # 计数器加密为分组掩码
@@ -196,10 +196,10 @@ class CTR(Mode):
             assert len(self._buffer) <= self._block_byte_len
             return self._process_block(self._buffer)  # 尾部数据不足一个分组时无需填充
 
-    def encryptor(self) -> Codec:
+    def encryptor(self) -> InnerCodec:
         return CTR.InnerCodec(self)
 
-    def decryptor(self) -> Codec:
+    def decryptor(self) -> InnerCodec:
         return CTR.InnerCodec(self)
 
 
@@ -264,7 +264,7 @@ class CFB(Mode):
                 val_y = memoryview(self._mode._algorithm.encrypt_block(val_x))[0:self._stream_unit_byte_len]  # 掩码
                 val_x.release()
 
-                val_c, val_out = self._process_block(in_octets, val_y)  # 用于反馈的密文和用于输出的密文/明文（加密时/解密时）
+                val_c, val_out = self._process_block(in_octets[m:n], val_y)  # 用于反馈的密文和用于输出的密文/明文（加密时/解密时）
                 out_octets.extend(val_out)
 
                 self._fb.extend(self._ex_padding)  # 如果反馈长度比模式分组长度长，则在密文分组左侧补足二进制1，通常k=j时为空
@@ -308,10 +308,10 @@ class CFB(Mode):
             # 解密时返回密文用于反馈，同时返回明文用于输出
             return in_block, xor_on_bytes(val_y, in_block)
 
-    def encryptor(self) -> Codec:
+    def encryptor(self) -> Encryptor:
         return CFB.Encryptor(self)
 
-    def decryptor(self) -> Codec:
+    def decryptor(self) -> Decryptor:
         return CFB.Decryptor(self)
 
 
@@ -493,3 +493,32 @@ class XTS(Mode):
 
     def decryptor(self):
         return XTS.Decryptor(self)
+
+
+def get_mode(mode_name: str, algorithm: BlockCipherAlgorithm, **kwargs):
+    mode_name = mode_name.upper()
+    if mode_name == 'ECB':
+        return ECB(algorithm=algorithm)
+    elif mode_name == 'CBC':
+        return CBC(iv=kwargs['iv'], algorithm=algorithm)
+    elif mode_name == 'CFB':
+        return CFB(iv=kwargs['iv'], algorithm=algorithm, stream_unit_byte_len=kwargs['stream_unit_byte_len'])
+    elif mode_name == 'CFB8':
+        return CFB(iv=kwargs['iv'], algorithm=algorithm, stream_unit_byte_len=1)
+    elif mode_name == 'CFB128':
+        return CFB(iv=kwargs['iv'], algorithm=algorithm, stream_unit_byte_len=16)
+    elif mode_name == 'OFB':
+        return OFB(iv=kwargs['iv'], algorithm=algorithm, stream_unit_byte_len=kwargs['stream_unit_byte_len'])
+    elif mode_name == 'OFB8':
+        return OFB(iv=kwargs['iv'], algorithm=algorithm, stream_unit_byte_len=1)
+    elif mode_name == 'OFB128':
+        return OFB(iv=kwargs['iv'], algorithm=algorithm, stream_unit_byte_len=16)
+    elif mode_name == 'CTR':
+        return CTR(iv=kwargs['iv'], algorithm=algorithm)
+    elif mode_name == 'XTS':
+        xts = XTS(algorithm=algorithm)
+        xts.set_tweak(kwargs['tweak'], kwargs['tweak_algorithm'])
+        return xts
+    else:
+        raise ValueError()
+

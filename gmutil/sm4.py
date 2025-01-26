@@ -189,62 +189,54 @@ class SM4(BlockCipherAlgorithm):
     def decrypt_block(self, message: Union[bytes, bytearray, memoryview]) -> bytes:
         return _do_sm4_rounds(message, self._rks, False)
 
-    def encrypt(self, message: Union[bytes, bytearray, memoryview],
-                mode: Optional[Literal['ECB', 'CBC', 'CTR']] = None,
-                padding: Optional[Literal['pkcs7', 'iso7816', 'iso9797m2', '']] = None,
-                iv: Union[bytes, bytearray, memoryview] = None) -> bytes:
 
-        _padding = get_padding(padding, SM4.BLOCK_SIZE)
+class SM4Encryptor(Codec):
+    def __init__(self, secret_key: bytes, mode: str, padding: Optional[str], **kwargs):
+        self.padding = get_padding(padding, SM4.BLOCK_SIZE, True)
+        self.sm4 = SM4(secret_key)
+        self.mode = get_mode(mode, self.sm4, **kwargs)
+        self.encryptor = self.mode.encryptor()
 
-        if mode is None:
-            _mode = None
-        elif mode == 'ECB':
-            _mode = ECB(function=self.encrypt_block, block_size=128)
-        elif mode == 'CBC':
-            _mode = CBC(function=self.encrypt_block, block_size=128, iv=iv, is_encrypt=True)
-        elif mode == 'CTR':
-            _mode = CTR(function=self.encrypt_block, block_size=128, iv=iv)
+    def update(self, octets: Union[bytes, bytearray, memoryview]) -> bytes:
+        if self.padding:
+            in_octets = self.padding.update(octets)
         else:
-            raise ValueError(f'未知的分组工作模式/Unknown mode name: {mode}')
+            in_octets = octets
 
+        return self.encryptor.update(in_octets)
+
+    def finalize(self) -> bytes:
         out_octets = bytearray()
+        if self.padding:
+            in_octets = self.padding.finalize()
+            if len(in_octets) > 0:
+                out_octets.extend(self.encryptor.update(in_octets))
+        out_octets.extend(self.encryptor.finalize())
+        return bytes(out_octets)
 
-        if _padding is None:
-            out_octets.extend(_mode.update(message))
-            out_octets.extend(_mode.finalize())
-        else:
-            out_octets.extend(_mode.update(_padding.update(message)))
-            out_octets.extend(_mode.update(_padding.finalize()))
-            out_octets.extend(_mode.finalize())
 
-        return out_octets
+class SM4Decryptor(Codec):
+    def __init__(self, secret_key: bytes, mode: str, padding: Optional[str], **kwargs):
+        self.sm4 = SM4(secret_key)
+        self.block_byte_len = self.sm4.block_size // 8
+        self.padding = get_padding(padding, self.sm4.block_size, False)
+        self.mode = get_mode(mode, self.sm4, **kwargs)
+        self.decryptor = self.mode.decryptor()
 
-    def decrypt(self, cipher_text: Union[bytes, bytearray, memoryview],
-                mode: Optional[Literal['ECB', 'CBC', 'CTR']] = None,
-                padding: Optional[Literal['pkcs7', 'iso7816', 'iso9797m2']] = None,
-                iv: Union[bytes, bytearray, memoryview] = None) -> bytes:
-        _padding = get_padding(padding, SM4.BLOCK_SIZE)
-
-        if mode is None:
-            _mode = None
-        elif mode == 'ECB':
-            _mode = ECB(function=self.decrypt_block, block_size=128)
-        elif mode == 'CBC':
-            _mode = CBC(function=self.decrypt_block, block_size=128, iv=iv, is_encrypt=False)
-        elif mode == 'CTR':
-            _mode = CTR(function=self.encrypt_block, block_size=128, iv=iv)
-        else:
-            raise ValueError(f'未知的分组工作模式/Unknown mode name: {mode}')
-
+    def update(self, octets: Union[bytes, bytearray, memoryview]) -> bytes:
         out_octets = bytearray()
-
-        if _padding is None:
-            out_octets.extend(_mode.update(cipher_text))
-            out_octets.extend(_mode.finalize())
+        decrypted = self.decryptor.update(octets)
+        if self.padding:
+            out_octets.extend(self.padding.update(decrypted))
         else:
-            out_octets.extend(_padding.update(_mode.update(cipher_text)))
-            out_octets.extend(_padding.update(_mode.finalize()))
-            out_octets.extend(_padding.finalize())
+            out_octets.extend(decrypted)
+        return bytes(out_octets)
 
-        return out_octets
+    def finalize(self) -> bytes:
+        decrypted = self.decryptor.finalize()
+        if self.padding:
+            return self.padding.update(decrypted) + self.padding.finalize()
+        else:
+            return bytes(decrypted)
+
 

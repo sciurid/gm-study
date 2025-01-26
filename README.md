@@ -68,6 +68,25 @@ for _ in range(1000000):
 assert cipher_text == bytes.fromhex('595298C7 C6FD271F 0402F804 C33D3F66')
 ```
 
+### SM4分组密码的工作模式
+
+```
+plain_text = '飞流直下三千尺，疑似银河落九天。'.encode('utf-8')
+secret_key = secrets.randbits(SM4.BLOCK_SIZE).to_bytes(16, byteorder='big', signed=False)
+iv = secrets.randbits(SM4.BLOCK_SIZE).to_bytes(16, byteorder='big', signed=False)
+print(secret_key.hex())
+print(iv.hex())
+
+encryptor = SM4Encryptor(secret_key, 'CBC', 'PKCS7', iv=iv)
+cipher_text = encryptor.update(plain_text) + encryptor.finalize()
+print(cipher_text.hex())
+
+decryptor = SM4Decryptor(secret_key, 'CBC', 'PKCS7', iv=iv)
+restored = decryptor.update(plain_text) + decryptor.finalize()
+print(restored.hex())
+
+```
+
 ### SM2签名和验签（SM3哈希/杂凑）
 
 ```
@@ -142,4 +161,3 @@ self.assertEqual(user_a.exchanged_key, user_b.exchanged_key)
 ## 待开发
 
 - SM2私钥和公钥的保存格式
-- SM4加密的补齐（padding）和模式（mode）
