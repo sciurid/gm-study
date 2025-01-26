@@ -1,9 +1,25 @@
 from typing import Callable, Union, Optional
 from .calculation import xor_on_bytes, mul_gf_2_128
-from .commons import Codec
+from .commons import Codec, BlockCipherAlgorithm
+from abc import ABC, abstractmethod
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+class Mode(ABC):
+
+    @abstractmethod
+    def set_algorithm(self, **kwargs):
+        raise NotImplementedError
+
+    @abstractmethod
+    def encryptor(self) -> Codec:
+        raise NotImplementedError
+
+    @abstractmethod
+    def decryptor(self) -> Codec:
+        raise NotImplementedError
 
 
 class ECB(Codec):

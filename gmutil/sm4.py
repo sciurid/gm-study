@@ -170,9 +170,10 @@ def sm4_decrypt_block(cipher_text: Union[bytes, bytearray, memoryview],
     return sm4_function(cipher_text, secret_key, False)
 
 
-class SM4:
+class SM4(BlockCipherAlgorithm):
     """SM4加解密类，适用于相同密钥反复使用的情况"""
     def __init__(self, secret_key: bytes):
+        super().__init__(SM4.BLOCK_SIZE)
         self._secret_key = secret_key
         self._rks = _expand_round_keys(secret_key)
 
