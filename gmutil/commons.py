@@ -56,4 +56,3 @@ class BlockCipherAlgorithm(ABC):
         :return: 解密后的明文数据，通常与分组长度相同
         """
         raise NotImplementedError()
-

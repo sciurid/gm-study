@@ -247,3 +247,4 @@ class SM4(BlockCipherAlgorithm):
             out_octets.extend(_padding.finalize())
 
         return out_octets
+
