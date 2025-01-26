@@ -343,7 +343,3 @@ class XTS:
                 out_octets.extend(p_q[0:d])
         return bytes(out_octets)
 
-
-
-
-

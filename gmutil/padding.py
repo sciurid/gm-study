@@ -14,6 +14,17 @@ class PKCS7Padding(Codec):
     与GB/T 17964-2021 C.2相同。
     """
 
+    def _process_block(self) -> bytes:
+        buffer_byte_len = len(self._buffer)
+        if buffer_byte_len == 0:
+            return b''
+
+        #  缓冲区超过一个分组长度时，保留尾部不足或刚好一个分组长度的部分，输出前面的完整分组部分
+        out_byte_len = ((buffer_byte_len - 1) // self._block_byte_len) * self._block_byte_len
+        out_octets = bytes(memoryview(self._buffer)[0:out_byte_len])
+        self._buffer = self._buffer[out_byte_len:]
+        return out_octets
+
     def __init__(self, block_size: int, mode_padding: bool = True):
         super().__init__()
         if not (0 < block_size < 2048):
@@ -27,34 +38,21 @@ class PKCS7Padding(Codec):
 
     def update(self, in_octets: Union[bytes, bytearray, memoryview]) -> bytes:
         self._buffer.extend(in_octets)
-        buffer_len = len(self._buffer)
-        if buffer_len == 0:
-            return b''
-
-        if self._mode_padding:
-            out_len = (buffer_len // self._block_byte_len) * self._block_byte_len
-            out_octets = bytes(self._buffer[:out_len])
-            self._buffer = self._buffer[out_len:]
-            return out_octets
-        else:
-            out_len = ((buffer_len - 1) // self._block_byte_len - 1) * self._block_byte_len
-            if out_len <= 0:
-                return b''
-
-            out_octets = bytes(self._buffer[:out_len])
-            self._buffer = self._buffer[out_len:]
-            return out_octets
+        return self._process_block()
 
     def finalize(self):
+        buffer_byte_len = len(self._buffer)
+        assert buffer_byte_len <= self._block_byte_len
         if self._mode_padding:
-            buffer_len = len(self._buffer)
-            padding_byte_len = self._block_byte_len - buffer_len % self._block_byte_len
+            padding_byte_len = self._block_byte_len - buffer_byte_len
+            if padding_byte_len == 0:
+                padding_byte_len = self._block_byte_len
             self._buffer.extend([padding_byte_len] * padding_byte_len)
             out_octets = bytes(self._buffer)
             self._buffer = None
             return bytes(out_octets)
         else:
-            if len(self._buffer) % self._block_byte_len != 0:
+            if buffer_byte_len != self._block_byte_len:
                 raise PaddingException("经过填充的数据长度不是分组长度的整数倍"
                                        "/Length of padded data is not a multiple of block size")
             padding_len = self._buffer[-1]
@@ -98,45 +96,48 @@ class OneAndZerosPadding(Codec):
         self._buffer = bytearray()
         self._mode_padding = mode_padding
 
-    def update(self, in_octets: Union[bytes, bytearray, memoryview]):
-        self._buffer.extend(in_octets)
-        buffer_len = len(self._buffer)
-        if buffer_len == 0:
+    def _process_block(self):
+        buffer_byte_len = len(self._buffer)
+        if buffer_byte_len == 0:
             return b''
 
-        if self._mode_padding:
-            out_len = (buffer_len // self._block_byte_len) * self._block_byte_len
-            out_octets = bytes(self._buffer[:out_len])
-            self._buffer = self._buffer[out_len:]
-            return out_octets
-        else:
-            out_len = ((buffer_len - 1) // self._block_byte_len) * self._block_byte_len
-            if out_len <= 0:
-                return b''
+        #  缓冲区超过一个分组长度时，保留尾部不足或刚好一个分组长度的部分，输出前面的完整分组部分
+        out_byte_len = ((buffer_byte_len - 1) // self._block_byte_len) * self._block_byte_len
+        out_octets = bytes(memoryview(self._buffer)[0:out_byte_len])
+        self._buffer = self._buffer[out_byte_len:]
+        return out_octets
 
-            out_octets = bytes(self._buffer[:out_len])
-            self._buffer = self._buffer[out_len:]
-            return out_octets
+    def update(self, in_octets: Union[bytes, bytearray, memoryview]):
+        self._buffer.extend(in_octets)
+        return self._process_block()
 
     def finalize(self):
+        buffer_byte_len = len(self._buffer)
+        assert buffer_byte_len <= self._block_byte_len
         if self._mode_padding:
             self._buffer.append(0x80)
-            buffer_len = len(self._buffer)
-            padding_byte_len = self._block_byte_len - buffer_len % self._block_byte_len
-            self._buffer.extend([0] * padding_byte_len)
-            out_octets = bytes(self._buffer)
+            if buffer_byte_len == self._block_byte_len:
+                self._buffer.extend(b'\x00' * (self._block_byte_len - 1))
+                out_octets = bytes(self._buffer)
+            else:
+                padding_byte_len = self._block_byte_len - buffer_byte_len - 1
+                self._buffer.extend([0] * padding_byte_len)
+                out_octets = bytes(self._buffer)
             self._buffer = None
             return bytes(out_octets)
         else:
-            buffer_len = len(self._buffer)
-            if buffer_len % self._block_byte_len != 0:
+            if buffer_byte_len != self._block_byte_len:
                 raise PaddingException("经过填充的数据长度不是分组长度的整数倍"
                                        "/Length of padded data is not a multiple of block size")
-            for i in range(-1, -buffer_len - 1, -1):
+            for i in range(-1, -buffer_byte_len - 1, -1):
                 if self._buffer[i] == 0x80:
                     return bytes(self._buffer[:i])
+                elif self._buffer[i] != 0:
+                    raise PaddingException("填充数据格式错误，填充部分有非0字节/"
+                                           "Padded data is mal-formatted with non-zero padding byte.")
             else:
-                raise PaddingException("填充数据格式错误/Padded data is mal-formatted.")
+                raise PaddingException("填充数据格式错误，最后分组未找到0x80字节"
+                                       "/Padded data is mal-formatted not ending with byte 0x80.")
 
 
 def one_and_zeros_pad(data: Union[bytes, bytearray, memoryview], block_size: int) -> bytes:
@@ -171,7 +172,6 @@ class LengthPrefixedPadding(Codec):
         self._buffer = bytearray()
         self._mode_padding = mode_padding
         self._empty_string = b'\x00' * (2 * self._block_byte_len)
-
 
     def update(self, octets: Union[bytes, bytearray, memoryview]) -> bytes:
         self._buffer.extend(octets)
@@ -227,6 +227,16 @@ def length_prefixed_unpad(data: Union[bytes, bytearray], block_size: int) -> byt
     out_octets = bytearray(padding.update(data))
     out_octets.extend(padding.finalize())
     return bytes(out_octets)
+
+
+class ZeroPadding(Codec):
+    def __init__(self, block_size: int, mode_padding: bool = True):
+        super().__init__()
+
+    def update(self, octets: Union[bytes, bytearray, memoryview]) -> bytes:
+        self._buffer.extend(octets)
+
+
 
 
 def get_padding(name: Optional[str], block_size: int):

@@ -91,13 +91,14 @@ def _round_function(x: List[int], rk: int):
     return x[0] ^ c
 
 
-def _expand_round_keys(mk_octets: Union[bytes, bytearray, memoryview]):
+def _expand_round_keys(mk_octets: Union[bytes, bytearray]):
     """GB/T 32907-2016 7.3 密钥扩展算法
 
     :param mk_octets 加密密钥，128-bit字节串
     """
     assert len(mk_octets) == 16
-    mk = [int.from_bytes(mk_octets[i: i + 4], byteorder='big', signed=False) for i in range(0, 16, 4)]  # 转换成4个32位整数
+    mv = memoryview(mk_octets)
+    mk = [int.from_bytes(mv[i: i + 4], byteorder='big', signed=False) for i in range(0, 16, 4)]  # 转换成4个32位整数
     ks = [mk_i ^ fk_i for mk_i, fk_i in zip(mk, _SM4_FK)]  # 式（6）
     for i in range(32):
         a = ks[i + 1] ^ ks[i + 2] ^ ks[i + 3] ^ _SM4_CK[i]
@@ -108,7 +109,7 @@ def _expand_round_keys(mk_octets: Union[bytes, bytearray, memoryview]):
     return ks[4:]
 
 
-def _do_sm4_rounds(message: Union[bytes, bytearray, memoryview], round_keys: List[int], encrypt: bool = True) -> bytes:
+def _do_sm4_rounds(message: Union[bytes, bytearray], round_keys: List[int], encrypt: bool = True) -> bytes:
     """SM4轮函数迭代
 
     GB/T 32907-2016 7.1 加密算法
@@ -116,9 +117,9 @@ def _do_sm4_rounds(message: Union[bytes, bytearray, memoryview], round_keys: Lis
     :param round_keys 轮密钥
     :param encrypt 加密/解密，True表示加密，False表示解密
     """
-    xs = [int.from_bytes(message[i: i + 4], byteorder='big', signed=False) for i in range(0, 16, 4)]
-    # for i, x in enumerate(xs):
-    #   logger.debug('x_%02d=%s', i, hex(x))
+    mmv = memoryview(message)
+    xs = [int.from_bytes(mmv[i: i + 4], byteorder='big', signed=False) for i in range(0, 16, 4)]
+
     for i in range(32):
         x_i = _round_function(xs[i:i + 4], round_keys[i if encrypt else (31 - i)])  # 加密时正向使用轮密钥，解密时反向使用轮密钥
         # logger.debug('rk_%02d=%s, x_%02d=%s', i, hex(round_keys[i]), i, hex(xs[i]))
