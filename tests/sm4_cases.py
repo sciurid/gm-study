@@ -40,8 +40,8 @@ class SM4TestCase(unittest.TestCase):
 
     def test_sm4_ecb(self):
         sm4 = SM4(SM4TestCase.SECRET_KEY)
-        ecb = ECB(sm4.encrypt_block, 128)
-
+        ecb = ECB()
+        ecb.set_algorithm(sm4)
         ecb_assertion = ('a51411ff04a711443891fce7ab842a29',
                          'd5b50f46a9a730a0f590ffa776d99855',
                          'c9a86a4d71447f4e873ada4f388af9b9',
@@ -49,24 +49,30 @@ class SM4TestCase(unittest.TestCase):
 
         logger.debug('=' * 20 + 'ECB ENCRYPTION' + '=' * 20)
         cipher_text = bytearray()
+        enc = ecb.encryptor()
+
         for i in range(4):
-            cipher_block = ecb.update(SM4TestCase.MESSAGE[i * 16: (i + 1) * 16])
+            cipher_block = enc.update(SM4TestCase.MESSAGE[i * 16: (i + 1) * 16])
             self.assertEqual(cipher_block, bytes.fromhex(ecb_assertion[i]))
             cipher_text.extend(cipher_block)
             print(cipher_block.hex())
-        cipher_block = ecb.finalize()
+        cipher_block = enc.finalize()
         self.assertEqual(cipher_block, b'')
         cipher_text.extend(cipher_block)
         print(cipher_block.hex())
 
         logger.debug('=' * 20 + 'ECB DECRYPTION' + '=' * 20)
-        ecb = ECB(sm4.decrypt_block, 128)
+        dec = ecb.decryptor()
         restored = bytearray()
         for i in range(4):
-            restore_block = ecb.update(cipher_text[i * 16: (i + 1) * 16])
-            self.assertEqual(restore_block, SM4TestCase.MESSAGE[i * 16: (i + 1) * 16])
-            restored.extend(restore_block)
-            print(restore_block.hex())
+            restored_block = dec.update(cipher_text[i * 16: (i + 1) * 16])
+            self.assertEqual(restored_block, SM4TestCase.MESSAGE[i * 16: (i + 1) * 16])
+            restored.extend(restored_block)
+            print(restored_block.hex())
+        restored_block = dec.finalize()
+        restored.extend(restored_block)
+        print(restored_block.hex())
+
 
     def test_sm4_cbc(self):
         sm4 = SM4(SM4TestCase.SECRET_KEY)

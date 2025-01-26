@@ -33,8 +33,8 @@ class BlockCipherAlgorithm(ABC):
     def __init__(self, block_size: int):
         self._block_size = block_size
 
-    @abstractmethod
     @property
+    @abstractmethod
     def block_size(self) -> int:
         """分组长度"""
         raise NotImplementedError()

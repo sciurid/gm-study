@@ -179,6 +179,10 @@ class SM4(BlockCipherAlgorithm):
 
     BLOCK_SIZE = 128
 
+    @property
+    def block_size(self) -> int:
+        return self.BLOCK_SIZE
+
     def encrypt_block(self, message: Union[bytes, bytearray, memoryview]) -> bytes:
         return _do_sm4_rounds(message, self._rks, True)
 

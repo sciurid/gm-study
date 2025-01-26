@@ -22,36 +22,60 @@ class Mode(ABC):
         raise NotImplementedError
 
 
-class ECB(Codec):
-    def __init__(self, function: Callable[[Union[bytes, bytearray, memoryview]], bytes], block_size: int):
+class ECB(Mode):
+    def __init__(self):
         super().__init__()
-        self._function = function
-        self._block_size = block_size
-        self._block_byte_len = self._block_size // 8
+        self._cipher = None
+        self._block_size = None
+        self._block_byte_len = None
         self._buffer = bytearray()
 
-    def _process_buffer(self) -> bytearray:
-        out_octets = bytearray()
-        buffer_len = len(self._buffer)
-        if buffer_len >= self._block_byte_len:
-            in_octets = memoryview(self._buffer)
-            i = 0
-            while i + self._block_byte_len <= buffer_len:
-                out_octets.extend(self._function(in_octets[i:i + self._block_byte_len]))
-                i += self._block_byte_len
-            self._buffer = self._buffer[i * self._block_byte_len:]
-        return out_octets
+    def set_algorithm(self, cipher: BlockCipherAlgorithm):
+        self._cipher = cipher
+        self._block_size = self._cipher.block_size
+        self._block_byte_len = self._block_size // 8
 
-    def update(self, in_octets: bytes) -> bytes:
-        self._buffer.extend(in_octets)
-        return bytes(self._process_buffer())
+    class InnerCodec(Codec):
+        def __init__(self, ecb: 'ECB', function: Callable[[Union[bytes, bytearray, memoryview]], bytes]):
+            self._block_byte_len = ecb._block_byte_len
+            self._buffer = bytearray()
+            self._function = function
 
-    def finalize(self) -> bytes:
-        out_octets = self._process_buffer()  # 以防万一
-        if len(self._buffer) != 0:
-            raise ValueError('数据长度不是分组长度的整数倍，需要填充/'
-                             'Length of data is not a multiple of block size, so padding is required')
-        return bytes(out_octets)
+        def _process_buffer(self) -> bytearray:
+            out_octets = bytearray()
+            buffer_len = len(self._buffer)
+            if buffer_len >= self._block_byte_len:
+                in_octets = memoryview(self._buffer)
+                i = 0
+                while i + self._block_byte_len <= buffer_len:
+                    out_octets.extend(self._function(in_octets[i:i + self._block_byte_len]))
+                    i += self._block_byte_len
+                self._buffer = self._buffer[i * self._block_byte_len:]
+            return out_octets
+
+        def update(self, in_octets: bytes) -> bytes:
+            self._buffer.extend(in_octets)
+            return bytes(self._process_buffer())
+
+        def finalize(self) -> bytes:
+            out_octets = self._process_buffer()  # 以防万一
+            if len(self._buffer) != 0:
+                raise ValueError('数据长度不是分组长度的整数倍，需要填充/'
+                                 'Length of data is not a multiple of block size, so padding is required')
+            return bytes(out_octets)
+
+    def encryptor(self):
+        return ECB.InnerCodec(self, self._cipher.encrypt_block)
+
+    def decryptor(self):
+        return ECB.InnerCodec(self, self._cipher.decrypt_block)
+
+
+
+
+
+
+
 
 
 class CBC(Codec):
