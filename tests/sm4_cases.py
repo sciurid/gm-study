@@ -76,37 +76,38 @@ class SM4TestCase(unittest.TestCase):
 
     def test_sm4_cbc(self):
         sm4 = SM4(SM4TestCase.SECRET_KEY)
-        cbc = CBC(sm4.encrypt_block, 128, iv=SM4TestCase.IV, is_encrypt=True)
-
-        logger.debug('=' * 20 + 'CBC ENCRYPTION' + '=' * 20)
+        cbc = CBC(SM4TestCase.IV)
+        cbc.set_algorithm(cipher=sm4)
 
         cbc_assertion = ('AC529AF989A62FCE9CDDC5FFB84125CA',
                          'B168DD69DB3C0EEA1AB16DE6AEA43C59',
                          '2C15567BFF8F707486C202C7BE59101F',
                          '74A629B350CD7E11BE99998AF5206D6C')
 
+        logger.debug('=' * 20 + 'CBC ENCRYPTION' + '=' * 20)
+        enc = cbc.encryptor()
         cipher_text = bytearray()
         for i in range(4):
             in_block = SM4TestCase.MESSAGE[i * 16: (i + 1) * 16]
             logger.debug('Plain:  {}'.format(in_block.hex()))
-            cipher_block = cbc.update(in_block)
+            cipher_block = enc.update(in_block)
             cipher_text.extend(cipher_block)
             logger.debug('Cipher: {}'.format(cipher_block.hex()))
             self.assertEqual(bytes.fromhex(cbc_assertion[i]), cipher_block)
-        cipher_block = cbc.finalize()
+        cipher_block = enc.finalize()
         self.assertEqual(b'', cipher_block)
         print(cipher_block.hex())
         cipher_text.extend(cipher_block)
 
         logger.debug('=' * 20 + 'CBC DECRYPTION' + '=' * 20)
-        cbc = CBC(sm4.decrypt_block, 128, iv=SM4TestCase.IV, is_encrypt=False)
+        dec = cbc.decryptor()
         restored = bytearray()
         for i in range(4):
-            restore_block = cbc.update(cipher_text[i * 16: (i + 1) * 16])
+            restore_block = dec.update(cipher_text[i * 16: (i + 1) * 16])
             self.assertEqual(restore_block, SM4TestCase.MESSAGE[i * 16: (i + 1) * 16])
             logger.debug('Restored:{}'.format(restore_block.hex()))
             restored.extend(restore_block)
-        restore_block = cbc.finalize()
+        restore_block = dec.finalize()
         self.assertEqual(b'', restore_block)
         restored.extend(restore_block)
         self.assertEqual(SM4TestCase.MESSAGE, restored)

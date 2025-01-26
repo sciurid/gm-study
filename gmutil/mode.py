@@ -23,34 +23,57 @@ class Mode(ABC):
 
 
 class ECB(Mode):
-    def __init__(self):
+    """电码本（ECB）模式，规定于GB/T 17964-2021 5"""
+    def __init__(self, cipher: Optional[BlockCipherAlgorithm] = None):
+        """初始化函数
+
+
+        :param cipher: 分组密码算法
+        """
         super().__init__()
         self._cipher = None
         self._block_size = None
         self._block_byte_len = None
+        self.set_algorithm(cipher=cipher)
+        if cipher is not None:
+            self.set_algorithm(cipher)
+
         self._buffer = bytearray()
 
     def set_algorithm(self, cipher: BlockCipherAlgorithm):
+        """设置要使用的分组密码算法
+
+        :param cipher: BlockCipherAlgorithm 分组密码算法
+        """
         self._cipher = cipher
         self._block_size = self._cipher.block_size
         self._block_byte_len = self._block_size // 8
 
     class InnerCodec(Codec):
+        """ECB模式下的加密和解密类"""
         def __init__(self, ecb: 'ECB', function: Callable[[Union[bytes, bytearray, memoryview]], bytes]):
+            """初始化函数
+
+            :param ecb: ECB对象
+            :param function: 分组加密算法的加解密函数，分别根据加密或解密模式设置为对应的函数
+            """
             self._block_byte_len = ecb._block_byte_len
             self._buffer = bytearray()
             self._function = function
 
         def _process_buffer(self) -> bytearray:
+            """处理缓冲区中输入数据的函数"""
             out_octets = bytearray()
             buffer_len = len(self._buffer)
-            if buffer_len >= self._block_byte_len:
+            if buffer_len >= self._block_byte_len:  # 当缓冲区中的输入数据长度超过分组长度时
                 in_octets = memoryview(self._buffer)
-                i = 0
-                while i + self._block_byte_len <= buffer_len:
-                    out_octets.extend(self._function(in_octets[i:i + self._block_byte_len]))
-                    i += self._block_byte_len
-                self._buffer = self._buffer[i * self._block_byte_len:]
+                m = 0
+                n = m + self._block_byte_len
+                while n <= buffer_len:
+                    out_octets.extend(self._function(in_octets[m:n]))  # 将前面的分组加密并输出
+                    m = n
+                    n = m + self._block_byte_len
+                self._buffer = self._buffer[m:]  # 保留尾部不满一个分组的部分
             return out_octets
 
         def update(self, in_octets: bytes) -> bytes:
@@ -58,11 +81,10 @@ class ECB(Mode):
             return bytes(self._process_buffer())
 
         def finalize(self) -> bytes:
-            out_octets = self._process_buffer()  # 以防万一
             if len(self._buffer) != 0:
                 raise ValueError('数据长度不是分组长度的整数倍，需要填充/'
                                  'Length of data is not a multiple of block size, so padding is required')
-            return bytes(out_octets)
+            return b''
 
     def encryptor(self):
         return ECB.InnerCodec(self, self._cipher.encrypt_block)
@@ -71,63 +93,97 @@ class ECB(Mode):
         return ECB.InnerCodec(self, self._cipher.decrypt_block)
 
 
+class CBC(Mode):
+    """密文分组链接（CBC）模式，规定于GB/T 17964-2021 7"""
+    def __init__(self, iv: Union[bytes, bytearray, memoryview], cipher: Optional[BlockCipherAlgorithm] = None):
+        """初始化函数
 
-
-
-
-
-
-
-class CBC(Codec):
-    def __init__(self, function: Callable[[Union[bytes, bytearray, memoryview]], bytes], block_size: int,
-                 iv: Union[bytes, bytearray, memoryview], is_encrypt: bool):
+        :param iv: 初始向量IV，由加解密双方约定或者由加密方提供给解密方
+        :param cipher: 分组密码算法
+        """
         super().__init__()
-        self._function = function
-
-        if block_size % 8 != 0:
-            raise ValueError('分组大小必须为8的倍数/Block size should be a multiple of 8')
-        if len(iv) * 8 != block_size:
-            raise ValueError('初始向量IV必须为分组长度/Initial vector should be of block size.')
-
-        self._block_size = block_size
-        self._block_byte_len = self._block_size // 8
+        self._cipher = None
+        self._block_size = None
+        self._block_byte_len = None
+        if cipher is not None:
+            self.set_algorithm(cipher)
 
         self._iv = iv
-        self._is_encrypt = is_encrypt
-
         self._buffer = bytearray()
         self._last_cipher_block = iv
 
-    def _process_buffer(self) -> bytearray:
-        out_octets = bytearray()
-        buffer_len = len(self._buffer)
-        if buffer_len >= self._block_byte_len:
-            in_octets = memoryview(self._buffer)
-            i = 0
-            while i + self._block_byte_len <= buffer_len:
-                if self._is_encrypt:
-                    block_input = xor_on_bytes(self._last_cipher_block, in_octets[i:i + self._block_byte_len])
-                    self._last_cipher_block = (self._function(block_input))
-                    out_octets.extend(self._last_cipher_block)
-                else:
-                    block_output = self._function(in_octets[i:i + self._block_byte_len])
-                    block_output = xor_on_bytes(block_output, self._last_cipher_block)
-                    self._last_cipher_block = in_octets[i:i + self._block_byte_len]
-                    out_octets.extend(block_output)
-                i += self._block_byte_len
-            self._buffer = self._buffer[i * self._block_byte_len:]
-        return out_octets
+    def set_algorithm(self, cipher: BlockCipherAlgorithm):
+        """设置要使用的分组密码算法
 
-    def update(self, in_octets: bytes) -> bytes:
-        self._buffer.extend(in_octets)
-        return bytes(self._process_buffer())
+        :param cipher: BlockCipherAlgorithm 分组密码算法
+        """
+        self._cipher = cipher
+        self._block_size = self._cipher.block_size
+        if self._block_size % 8 != 0:
+            raise ValueError('分组大小必须为8的倍数/Block size should be a multiple of 8')
+        self._block_byte_len = self._block_size // 8
 
-    def finalize(self) -> bytes:
-        out_octets = self._process_buffer()  # 以防万一
-        if len(self._buffer) != 0:
-            raise ValueError('数据长度不是分组长度的整数倍，需要填充/'
-                             'Length of data is not a multiple of block size, so padding is required')
-        return bytes(out_octets)
+    class InnerCodec(Codec, ABC):
+        """内部使用的加解密工具类"""
+        def __init__(self, cbc: 'CBC'):
+            self._buffer = bytearray()
+            self._cbc = cbc
+            self._last_cipher_block = cbc._iv
+
+        @abstractmethod
+        def _process_block(self, in_block: Union[bytes, bytearray, memoryview]) -> bytes:
+            """处理单个分组的函数，加密解密实现不同"""
+            pass
+
+        def _process_buffer(self) -> bytes:
+            """处理缓冲区中输入数据的函数"""
+            out_octets = bytearray()
+            buffer_len = len(self._buffer)
+            block_byte_len = self._cbc._block_byte_len
+            if buffer_len >= self._cbc._block_byte_len:
+                in_octets = memoryview(self._buffer)
+                m, n = 0, block_byte_len
+                while n <= buffer_len:
+                    out_octets.extend(self._process_block(in_octets[m:n]))
+                    m = n
+                    n = m + block_byte_len
+                self._buffer = self._buffer[m:]
+            return out_octets
+
+        def update(self, in_octets: bytes) -> bytes:
+            self._buffer.extend(in_octets)
+            return bytes(self._process_buffer())
+
+        def finalize(self) -> bytes:
+            if len(self._buffer) != 0:
+                raise ValueError('数据长度不是分组长度的整数倍，需要填充/'
+                                 'Length of data is not a multiple of block size, so padding is required')
+            return b''
+
+    class Encryptor(InnerCodec):
+        def __init__(self, cbc: 'CBC'):
+            super().__init__(cbc)
+
+        def _process_block(self, in_block: Union[bytes, bytearray, memoryview]) -> bytes:
+            to_encrypt = xor_on_bytes(self._last_cipher_block, in_block)  # 输入分组与上一组密文异或
+            self._last_cipher_block = self._cbc._cipher.encrypt_block(to_encrypt)  # 使用加密函数形成密文，并保存用于下一组处理
+            return self._last_cipher_block
+
+    class Decryptor(InnerCodec):
+        def __init__(self, cbc: 'CBC'):
+            super().__init__(cbc)
+
+        def _process_block(self, in_block: Union[bytes, bytearray, memoryview]) -> bytes:
+            decrypted = xor_on_bytes(self._cbc._cipher.decrypt_block(in_block), self._last_cipher_block)
+            # 输入分组解密后与上一组密文异或，形成明文
+            self._last_cipher_block = in_block  # 保留本组输入（密文）作为用于下一组处理
+            return decrypted
+
+    def encryptor(self) -> Codec:
+        return CBC.Encryptor(self)
+
+    def decryptor(self) -> Codec:
+        return CBC.Decryptor(self)
 
 
 class CTR(Codec):
