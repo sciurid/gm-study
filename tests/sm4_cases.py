@@ -73,11 +73,10 @@ class SM4TestCase(unittest.TestCase):
         restored.extend(restored_block)
         print(restored_block.hex())
 
-
     def test_sm4_cbc(self):
         sm4 = SM4(SM4TestCase.SECRET_KEY)
         cbc = CBC(SM4TestCase.IV)
-        cbc.set_algorithm(cipher=sm4)
+        cbc.set_algorithm(algorithm=sm4)
 
         cbc_assertion = ('AC529AF989A62FCE9CDDC5FFB84125CA',
                          'B168DD69DB3C0EEA1AB16DE6AEA43C59',
@@ -116,30 +115,33 @@ class SM4TestCase(unittest.TestCase):
 
     def test_sm4_ctr(self):
         sm4 = SM4(SM4TestCase.SECRET_KEY)
-        ctr = CTR(sm4.encrypt_block, 128, iv=SM4TestCase.IV_COUNTER)
+        ctr = CTR(SM4TestCase.IV_COUNTER, sm4)
 
-        logger.debug('=' * 20 + 'CTR ENCRYPTION' + '=' * 20)
+
         enc_assertion = ('14AE4A72B97A93CE1216CCD998E371C1',
                          '60F7EF8B6344BD6DA1992505E5FC219B',
                          '0BF057F86C5D75103C0F46519C7FB2E7',
                          '292805035ADB9A90ECEF145359D7CF0E')
+
+        logger.debug('=' * 20 + 'CTR ENCRYPTION' + '=' * 20)
+        enc = ctr.encryptor()
         cipher_text = bytearray()
         for i in range(4):
-            cipher_block = ctr.update(SM4TestCase.MESSAGE[i * 16: (i + 1) * 16])
+            cipher_block = enc.update(SM4TestCase.MESSAGE[i * 16: (i + 1) * 16])
             cipher_text.extend(cipher_block)
             self.assertEqual(cipher_block, bytes.fromhex(enc_assertion[i]))
-        cipher_block = ctr.finalize()
+        cipher_block = enc.finalize()
         cipher_text.extend(cipher_block)
         self.assertEqual(b'', cipher_block)
 
         logger.debug('=' * 20 + 'CTR DECRYPTION' + '=' * 20)
-        ctr = CTR(sm4.encrypt_block, 128, iv=SM4TestCase.IV_COUNTER)
+        dec = ctr.decryptor()
         restored = bytearray()
         for i in range(4):
-            restored_block = ctr.update(cipher_text[i * 16: (i + 1) * 16])
+            restored_block = dec.update(cipher_text[i * 16: (i + 1) * 16])
             restored.extend(restored_block)
             self.assertEqual(restored_block, SM4TestCase.MESSAGE[i * 16: (i + 1) * 16])
-        restored_block = ctr.finalize()
+        restored_block = dec.finalize()
         restored.extend(restored_block)
         self.assertEqual(b'', restored_block)
 
