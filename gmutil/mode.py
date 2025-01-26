@@ -167,7 +167,7 @@ class CTR(Mode):
             raise ValueError('初始向量IV必须为分组长度/Initial vector should be of block size.')
         super().set_algorithm(algorithm)
 
-    class Encryptor(BlockwiseInnerCodec):
+    class InnerCodec(BlockwiseInnerCodec):
         """CTR模式的加密解密是相同算法
         """
         def __init__(self, mode: 'CTR'):
@@ -197,10 +197,10 @@ class CTR(Mode):
             return self._process_block(self._buffer)  # 尾部数据不足一个分组时无需填充
 
     def encryptor(self) -> Codec:
-        return CTR.Encryptor(self)
+        return CTR.InnerCodec(self)
 
     def decryptor(self) -> Codec:
-        return CTR.Encryptor(self)
+        return CTR.InnerCodec(self)
 
 
 class CFB(Mode):
@@ -258,20 +258,21 @@ class CFB(Mode):
             in_octets = memoryview(self._buffer)
             buffer_len = len(self._buffer)
             m = 0
-            n = m + self._stream_unit_byte_len
+            n = self._stream_unit_byte_len
             while n <= buffer_len:
                 val_x = memoryview(self._fb)[0:self._block_byte_len]  # FB的左侧取分组密码算法的分组长度，用于加密形成掩码
                 val_y = memoryview(self._mode._algorithm.encrypt_block(val_x))[0:self._stream_unit_byte_len]  # 掩码
                 val_x.release()
 
-                m = n
-                n = m + self._stream_unit_byte_len  # 输入数据中的模式分组部分
                 val_c, val_out = self._process_block(in_octets, val_y)  # 用于反馈的密文和用于输出的密文/明文（加密时/解密时）
                 out_octets.extend(val_out)
 
                 self._fb.extend(self._ex_padding)  # 如果反馈长度比模式分组长度长，则在密文分组左侧补足二进制1，通常k=j时为空
                 self._fb.extend(val_c)  # 反馈密文
                 self._fb = self._fb[-self._iv_byte_len:]  # 取FB的最右侧的初始向量分组长度
+
+                m = n
+                n = m + self._stream_unit_byte_len  # 输入的下一个模式分组
 
             in_octets.release()
             self._buffer = self._buffer[m:]
@@ -314,88 +315,59 @@ class CFB(Mode):
         return CFB.Decryptor(self)
 
 
-
-
-
-    def _process_buffer(self):
-        out_octets = bytearray()
-        in_octets = memoryview(self._buffer)
-        buffer_len = len(self._buffer)
-        m = 0
-        while m < buffer_len:
-            val_x = memoryview(self._fb)[0:self._block_byte_len]
-            val_y = memoryview(self._function(val_x))[0:self._stream_unit_byte_len]
-
-            if self._is_encrypt:
-                n = m + self._stream_unit_byte_len
-                val_c = xor_on_bytes(val_y, in_octets[m:n])
-                m = n
-                out_octets.extend(val_c)
-            else:
-                n = m + self._stream_unit_byte_len
-                val_c = memoryview(self._buffer)[m:n]
-                m = n
-                out_octets.extend(xor_on_bytes(val_y, val_c))
-
-            self._fb.extend(b'\xff' * (self._feedback_byte_len - self._stream_unit_byte_len))
-            self._fb.extend(val_c)
-            self._fb = self._fb[-self._iv_byte_len:]
-
-        in_octets.release()
-        self._buffer = self._buffer[m:]
-        return out_octets
-
-    def update(self, octets: Union[bytes, bytearray, memoryview]) -> bytes:
-        self._buffer.extend(octets)
-        return bytes(self._process_buffer())
-
-    def finalize(self) -> bytes:
-        buffer_len = len(self._buffer)
-        if buffer_len % self._stream_unit_byte_len != 0:
-            self._buffer.extend(b'\x00' * (self._stream_unit_byte_len - buffer_len))
-        out_octets = self._process_buffer()
-        return bytes(out_octets[0:buffer_len])
-
-
-class OFB(Codec):
-    def __init__(self, function: Callable[[Union[bytes, bytearray, memoryview]], bytes], block_size: int,
-                 iv: Union[bytes, bytearray, memoryview], is_encrypt: bool, output_byte_len: Optional[int] = None):
-
-        self._function = function
-        self._block_size = block_size
-        self._block_byte_len = self._block_size // 8
-
-        self._output_block_byte_len = output_byte_len if output_byte_len else self._block_byte_len
+class OFB(Mode):
+    """输出反馈（OFB）模式，规定于GB/T 17964-2021 8"""
+    def __init__(self, iv: Union[bytes, bytearray, memoryview], algorithm: Optional[BlockCipherAlgorithm] = None,
+                 stream_unit_byte_len: Optional[int] = None):
+        super().__init__(algorithm)
         self._iv = iv
-        self._fb = iv
-        self._buffer = bytearray()
+        self.set_algorithm(algorithm)
+        self._stream_unit_byte_len = stream_unit_byte_len if stream_unit_byte_len else self._block_byte_len
+        self._iv = iv
 
-    def _process_buffer(self):
-        out_octets = bytearray()
-        in_octets = memoryview(self._buffer)
-        buffer_len = len(self._buffer)
-        m = 0
-        while m < buffer_len:
-            val_y = self._function(self._fb)
-            n = m + self._output_block_byte_len
-            out_octets.extend(xor_on_bytes(memoryview(val_y)[0:self._output_block_byte_len], in_octets[m:n]))
-            m = n
-            self._fb = val_y
+    class InnerCodec(Codec):
+        def __init__(self, mode: 'OFB'):
+            self._mode = mode
+            self._algorithm = mode._algorithm  # 分组加密算法
+            self._stream_unit_byte_len = mode._stream_unit_byte_len  # 模式分组长度
+            self._fb = mode._iv  # 反馈变量
+            self._buffer = bytearray()  # 输入缓冲区
 
-        in_octets.release()
-        self._buffer = self._buffer[m:]
-        return out_octets
+        def _process_buffer(self):
+            out_octets = bytearray()
+            in_octets = memoryview(self._buffer)
+            buffer_len = len(self._buffer)
+            m = 0
+            n = self._stream_unit_byte_len
+            while n <= buffer_len:
+                val_y = self._algorithm.encrypt_block(self._fb)  # 加密反馈变量用作掩码
+                # 掩码左侧部分（长度为模式分组长度）与输入明文/密文异或形成密文/明文并输出
+                out_octets.extend(xor_on_bytes(memoryview(val_y)[0:self._stream_unit_byte_len], in_octets[m:n]))
+                self._fb = val_y  # 掩码作为下一组的反馈变量
 
-    def update(self, octets: Union[bytes, bytearray, memoryview]) -> bytes:
-        self._buffer.extend(octets)
-        return bytes(self._process_buffer())
+                m = n
+                n = m + self._stream_unit_byte_len
 
-    def finalize(self) -> bytes:
-        buffer_len = len(self._buffer)
-        if buffer_len % self._output_block_byte_len != 0:
-            self._buffer.extend(b'\x00' * (self._output_block_byte_len - buffer_len))
-        out_octets = self._process_buffer()
-        return bytes(out_octets[0:buffer_len])
+            in_octets.release()
+            self._buffer = self._buffer[m:]
+            return out_octets
+
+        def update(self, octets: Union[bytes, bytearray, memoryview]) -> bytes:
+            self._buffer.extend(octets)
+            return bytes(self._process_buffer())
+
+        def finalize(self) -> bytes:
+            buffer_len = len(self._buffer)
+            if buffer_len % self._stream_unit_byte_len != 0:
+                self._buffer.extend(b'\x00' * (self._stream_unit_byte_len - buffer_len))
+            out_octets = self._process_buffer()
+            return bytes(out_octets[0:buffer_len])
+
+    def encryptor(self) -> InnerCodec:
+        return OFB.InnerCodec(self)
+
+    def decryptor(self) -> InnerCodec:
+        return OFB.InnerCodec(self)
 
 
 class XTS:

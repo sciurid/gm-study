@@ -183,35 +183,37 @@ class SM4TestCase(unittest.TestCase):
 
     def test_sm4_ofb128(self):
         sm4 = SM4(SM4TestCase.SECRET_KEY)
-        ofb = OFB(sm4.encrypt_block, 128, iv=SM4TestCase.IV, is_encrypt=True, output_byte_len=128)
+        ofb = OFB(SM4TestCase.IV, sm4, 16)
 
-        logger.debug('=' * 20 + 'CTR ENCRYPTION' + '=' * 20)
         enc_assertion = ('bc710d762d070b26361da82b54565e46',
                          '07a0c62834740ad3240d239125e11621',
                          'd476b21cc9f04951f0741d2ef9e09498',
                          '1584fc142bf13aa626b82f9d7d076cce')
+
+        logger.debug('=' * 20 + 'OFB128 ENCRYPTION' + '=' * 20)
+        enc = ofb.encryptor()
         cipher_text = bytearray()
         for i in range(4):
-            cipher_block = ofb.update(SM4TestCase.MESSAGE[i * 16: (i + 1) * 16])
+            cipher_block = enc.update(SM4TestCase.MESSAGE[i * 16: (i + 1) * 16])
             cipher_text.extend(cipher_block)
             # print(cipher_block.hex())
             self.assertEqual(cipher_block, bytes.fromhex(enc_assertion[i]))
-        cipher_block = ofb.finalize()
+        cipher_block = enc.finalize()
         cipher_text.extend(cipher_block)
         self.assertEqual(b'', cipher_block)
         print(cipher_text.hex())
 
         logger.debug('=' * 20 + 'CTR DECRYPTION' + '=' * 20)
-        ofb = OFB(sm4.encrypt_block, 128, iv=SM4TestCase.IV, is_encrypt=False, output_byte_len=128)
+        dec = ofb.decryptor()
         restored = bytearray()
         for i in range(4):
-            restored_block = ofb.update(cipher_text[i * 16: (i + 1) * 16])
+            restored_block = dec.update(cipher_text[i * 16: (i + 1) * 16])
             restored.extend(restored_block)
             self.assertEqual(restored_block, SM4TestCase.MESSAGE[i * 16: (i + 1) * 16])
-        restored_block = ofb.finalize()
+        restored_block = dec.finalize()
         restored.extend(restored_block)
         self.assertEqual(b'', restored_block)
-
+        print(restored.hex())
         self.assertEqual(SM4TestCase.MESSAGE, restored)
 
     def test_sm4_xts(self):
