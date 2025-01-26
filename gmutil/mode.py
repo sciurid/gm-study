@@ -1,4 +1,4 @@
-from typing import Callable, Union, Optional
+from typing import Callable, Union, Optional, Tuple
 from .calculation import xor_on_bytes, mul_gf_2_128
 from .commons import Codec, BlockCipherAlgorithm
 from abc import ABC, abstractmethod
@@ -173,22 +173,27 @@ class CTR(Mode):
         def __init__(self, mode: 'CTR'):
             super().__init__(mode)
             self._last_counter = mode._iv
-            self._all_ones = (1 << mode._algorithm.block_size) - 1
+            self._block_byte_len = mode._block_byte_len
+            self._algorithm = mode._algorithm
+            self._overflow = 1 << mode._algorithm.block_size
 
         def _process_block(self, in_block: Union[bytes, bytearray, memoryview]) -> bytes:
-            mask = self._mode._algorithm.encrypt_block(self._last_counter)  # 计数器加密为分组掩码
-            if len(in_block) == self._mode.block_byte_len:
+            mask = self._algorithm.encrypt_block(self._last_counter)  # 计数器加密为分组掩码
+            if len(in_block) == self._block_byte_len:
                 out_block = xor_on_bytes(in_block, mask)  # 分组掩码与明文/密文异或得到密文/明文
             else:
                 out_block = xor_on_bytes(in_block, memoryview(mask)[0:len(in_block)])
-            self._last_counter = (((int.from_bytes(self._last_counter, byteorder='big', signed=False) + 1)
-                                  % self._all_ones)
-                                  .to_bytes(length=self._mode.block_byte_len, byteorder='big', signed=False))
+
             # 计数器加一并按分组长度循环
+            next_counter = int.from_bytes(self._last_counter, byteorder='big', signed=False) + 1
+            if next_counter == self._overflow:
+                next_counter = 0
+            self._last_counter = next_counter.to_bytes(length=self._block_byte_len, byteorder='big', signed=False)
+
             return out_block
 
         def finalize(self) -> bytes:
-            assert len(self._buffer) <= self._mode.block_byte_len
+            assert len(self._buffer) <= self._block_byte_len
             return self._process_block(self._buffer)  # 尾部数据不足一个分组时无需填充
 
     def encryptor(self) -> Codec:
@@ -198,27 +203,119 @@ class CTR(Mode):
         return CTR.Encryptor(self)
 
 
-class CFB(Codec):
-    def __init__(self, function: Callable[[Union[bytes, bytearray, memoryview]], bytes], block_size: int,
-                 iv: Union[bytes, bytearray, memoryview], is_encrypt: bool,
-                 output_block_byte_len: Optional[int] = None, val_k_byte_len: Optional[int] = None):
-        self._function = function
+class CFB(Mode):
+    """密文反馈（CFB）模式，规定于GB/T 17964-2021 7
 
-        if block_size % 8 != 0:
-            raise ValueError('分组大小必须为8的倍数/Block size should be a multiple of 8.')
-        if len(iv) * 8 < block_size:
-            raise ValueError('初始向量IV必须不小于分组长度/Initial vector should be of block size.')
+    CFB模式的分组长度可以短于底层分组加密算法的分组长度，如果取8bit的话则转变为流加密（CFB8）。
+    国标规定的长度中还有个反馈变量的长度k，实际中通常取模式的分组长度（k=j）。
+    国标中设初始向量IV长度(r) >= 分组加密算法的分组长度(n) >= 反馈密文长度(k) >= 模式分组长度(j)，
+    实际应用中通常是r = n > k = j，尚不明确为何采取此种规范。
+    """
+    def __init__(self, iv: Union[bytes, bytearray, memoryview], algorithm: Optional[BlockCipherAlgorithm] = None,
+                 stream_unit_byte_len: Optional[int] = None, feedback_byte_len: Optional[int] = None):
+        """初始化函数
 
-        self._block_size = block_size
-        self._block_byte_len = block_size // 8
+        :param iv: 初始向量IV，长度不少于底层分组密码算法的分组长度
+        :param algorithm: 底层的分组密码算法
+        :param stream_unit_byte_len: CFB模式的分组长度（国标中的j//8），不超过底层的分组密码算法的长度
+        :param feedback_byte_len: 反馈变量长度（国标中的k//8），不小于模式的分组长度，不超过底层分组密码算法的分组长度，通常取模式的分组长度
+        """
         self._iv = iv
         self._iv_byte_len = len(self._iv)
-        self._is_encrypt = is_encrypt
+        super().__init__(algorithm)
+        self._stream_unit_byte_len = stream_unit_byte_len if stream_unit_byte_len else self._block_byte_len
+        self._feedback_byte_len = feedback_byte_len if feedback_byte_len else self._stream_unit_byte_len
 
-        self._output_block_byte_len = output_block_byte_len if output_block_byte_len else self._block_byte_len
-        self._val_k_byte_len = val_k_byte_len if val_k_byte_len else self._output_block_byte_len
-        self._buffer = bytearray()
-        self._fb = bytearray(iv)
+    def set_algorithm(self, algorithm: BlockCipherAlgorithm):
+        if len(self._iv) * 8 < algorithm.block_size:
+            raise ValueError('初始向量IV必须不小于分组长度/Initial vector should be of block size.')
+        super().set_algorithm(algorithm)
+
+    class InnerCodec(Codec, ABC):
+        def __init__(self, mode: 'CFB'):
+            self._mode = mode
+            self._algorithm = mode._algorithm
+            self._block_byte_len = mode._block_byte_len
+            self._stream_unit_byte_len = mode._stream_unit_byte_len
+
+            self._buffer = bytearray()
+            self._fb = bytearray(self._mode._iv)
+            self._iv_byte_len = len(self._mode._iv)
+            self._ex_padding = b'\xff' * (self._mode._feedback_byte_len - self._mode._stream_unit_byte_len)
+
+        @abstractmethod
+        def _process_block(self, in_block: Union[bytes, bytearray, memoryview], val_y: memoryview
+                           ) -> Tuple[bytes, bytes]:
+            """对于每个分组的处理流程，加密和解密不同
+
+            :param in_block: 输入数据，长度为模式分组长度
+            :return: 二元组(用于反馈的密文, 用于输出的密文（加密时）或明文（解密时）)
+            """
+            raise NotImplementedError()
+
+        def _process_buffer(self):
+            out_octets = bytearray()
+            in_octets = memoryview(self._buffer)
+            buffer_len = len(self._buffer)
+            m = 0
+            n = m + self._stream_unit_byte_len
+            while n <= buffer_len:
+                val_x = memoryview(self._fb)[0:self._block_byte_len]  # FB的左侧取分组密码算法的分组长度，用于加密形成掩码
+                val_y = memoryview(self._mode._algorithm.encrypt_block(val_x))[0:self._stream_unit_byte_len]  # 掩码
+                val_x.release()
+
+                m = n
+                n = m + self._stream_unit_byte_len  # 输入数据中的模式分组部分
+                val_c, val_out = self._process_block(in_octets, val_y)  # 用于反馈的密文和用于输出的密文/明文（加密时/解密时）
+                out_octets.extend(val_out)
+
+                self._fb.extend(self._ex_padding)  # 如果反馈长度比模式分组长度长，则在密文分组左侧补足二进制1，通常k=j时为空
+                self._fb.extend(val_c)  # 反馈密文
+                self._fb = self._fb[-self._iv_byte_len:]  # 取FB的最右侧的初始向量分组长度
+
+            in_octets.release()
+            self._buffer = self._buffer[m:]
+            return out_octets
+
+        def update(self, octets: Union[bytes, bytearray, memoryview]) -> bytes:
+            self._buffer.extend(octets)
+            return bytes(self._process_buffer())
+
+        def finalize(self) -> bytes:
+            buffer_len = len(self._buffer)
+            if buffer_len % self._stream_unit_byte_len != 0:
+                self._buffer.extend(b'\x00' * (self._stream_unit_byte_len - buffer_len))
+            out_octets = self._process_buffer()
+            return bytes(out_octets[0:buffer_len])
+
+    class Encryptor(InnerCodec):
+        def __init__(self, mode: 'CFB'):
+            super().__init__(mode)
+
+        def _process_block(self, in_block: Union[bytes, bytearray, memoryview], val_y: memoryview
+                           ) -> Tuple[bytes, bytes]:
+            # 加密时返回密文用于反馈，同时返回密文用于输出
+            val_c = xor_on_bytes(val_y, in_block)
+            return val_c, val_c
+
+    class Decryptor(InnerCodec):
+        def __init__(self, mode: 'CFB'):
+            super().__init__(mode)
+
+        def _process_block(self, in_block: Union[bytes, bytearray, memoryview], val_y: memoryview
+                           ) -> Tuple[bytes, bytes]:
+            # 解密时返回密文用于反馈，同时返回明文用于输出
+            return in_block, xor_on_bytes(val_y, in_block)
+
+    def encryptor(self) -> Codec:
+        return CFB.Encryptor(self)
+
+    def decryptor(self) -> Codec:
+        return CFB.Decryptor(self)
+
+
+
+
 
     def _process_buffer(self):
         out_octets = bytearray()
@@ -227,20 +324,20 @@ class CFB(Codec):
         m = 0
         while m < buffer_len:
             val_x = memoryview(self._fb)[0:self._block_byte_len]
-            val_y = memoryview(self._function(val_x))[0:self._output_block_byte_len]
+            val_y = memoryview(self._function(val_x))[0:self._stream_unit_byte_len]
 
             if self._is_encrypt:
-                n = m + self._output_block_byte_len
+                n = m + self._stream_unit_byte_len
                 val_c = xor_on_bytes(val_y, in_octets[m:n])
                 m = n
                 out_octets.extend(val_c)
             else:
-                n = m + self._output_block_byte_len
+                n = m + self._stream_unit_byte_len
                 val_c = memoryview(self._buffer)[m:n]
                 m = n
                 out_octets.extend(xor_on_bytes(val_y, val_c))
 
-            self._fb.extend(b'\xff' * (self._val_k_byte_len - self._output_block_byte_len))
+            self._fb.extend(b'\xff' * (self._feedback_byte_len - self._stream_unit_byte_len))
             self._fb.extend(val_c)
             self._fb = self._fb[-self._iv_byte_len:]
 
@@ -254,8 +351,8 @@ class CFB(Codec):
 
     def finalize(self) -> bytes:
         buffer_len = len(self._buffer)
-        if buffer_len % self._output_block_byte_len != 0:
-            self._buffer.extend(b'\x00' * (self._output_block_byte_len - buffer_len))
+        if buffer_len % self._stream_unit_byte_len != 0:
+            self._buffer.extend(b'\x00' * (self._stream_unit_byte_len - buffer_len))
         out_octets = self._process_buffer()
         return bytes(out_octets[0:buffer_len])
 

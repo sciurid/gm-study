@@ -153,28 +153,33 @@ class SM4TestCase(unittest.TestCase):
         message = bytes.fromhex('6b c1 be e2 2e 40 9f 96')
         enc_assertion = bytes.fromhex('bc 98 b6 9c 0b 3a c8 7b')
 
-        cfb = CFB(sm4.encrypt_block, 128, iv=SM4TestCase.IV, is_encrypt=True,
-                  output_block_byte_len=1)
+        cfb = CFB(SM4TestCase.IV, sm4, 1)
+
         logger.debug('=' * 20 + 'CFB8 ENCRYPTION' + '=' * 20)
+        enc = cfb.encryptor()
         cipher_text = bytearray()
         for i in range(len(message)):
-            cipher_block = cfb.update(message[i:i+1])
+            cipher_block = enc.update(message[i:i+1])
             cipher_text.extend(cipher_block)
             self.assertEqual(cipher_block, enc_assertion[i:i+1])
-        cipher_block = cfb.finalize()
+        cipher_block = enc.finalize()
         cipher_text.extend(cipher_block)
         self.assertEqual(b'', cipher_block)
+        print(cipher_text.hex())
 
-        cfb = CFB(sm4.encrypt_block, 128, iv=SM4TestCase.IV, is_encrypt=False,
-                  output_block_byte_len=1)
+        dec = cfb.decryptor()
+        restored = bytearray()
         logger.debug('=' * 20 + 'CFB8 DECRYPTION' + '=' * 20)
         for i in range(len(message)):
-            restored_block = cfb.update(cipher_text[i:i+1])
-            cipher_text.extend(cipher_block)
+            restored_block = dec.update(cipher_text[i:i+1])
+            restored.extend(restored_block)
             self.assertEqual(restored_block, message[i:i+1])
-        restored_block = cfb.finalize()
-        cipher_text.extend(restored_block)
+        restored_block = dec.finalize()
+        restored.extend(restored_block)
         self.assertEqual(b'', restored_block)
+        print(restored.hex())
+
+        self.assertEqual(restored, message)
 
     def test_sm4_ofb128(self):
         sm4 = SM4(SM4TestCase.SECRET_KEY)
