@@ -226,15 +226,17 @@ class SM4TestCase(unittest.TestCase):
                                 'F69F2445DF4F9B17')
 
         sm4 = SM4(secret_key)
-        sm4_tweak = SM4(tweak_key)
+        xts = XTS(sm4)
+        xts.set_tweak(tweak, SM4(tweak_key))
 
-        xts = XTS(sm4.encrypt_block, 128, sm4_tweak.encrypt_block, tweak, True)
-        cipher_text = xts.update(message) + xts.finalize()
+        logger.debug('=' * 20 + 'XTS ENCRYPTION' + '=' * 20)
+        enc = xts.encryptor()
+        cipher_text = enc.update(message) + enc.finalize()
         print(cipher_text.hex())
 
-        logger.debug('=' * 20 + 'CTR DECRYPTION' + '=' * 20)
-        xts = XTS(sm4.decrypt_block, 128, sm4_tweak.encrypt_block, tweak, False)
-        restored = xts.update(cipher_text) + xts.finalize()
+        logger.debug('=' * 20 + 'XTS DECRYPTION' + '=' * 20)
+        dec = xts.decryptor()
+        restored = dec.update(cipher_text) + dec.finalize()
         print(restored.hex())
 
         self.assertEqual(message.hex(), restored.hex())

@@ -370,94 +370,126 @@ class OFB(Mode):
         return OFB.InnerCodec(self)
 
 
-class XTS:
-    def __init__(self, function: Callable[[Union[bytes, bytearray, memoryview]], bytes], block_size: int,
-                 tweak_enc_func: Callable[[Union[bytes, bytearray, memoryview]], bytes],
-                 tweak: Union[bytes, bytearray, memoryview], is_encrypt: bool):
-        self._tweak_enc_func = tweak_enc_func
-        self._function = function
-
-        if block_size % 8 != 0:
-            raise ValueError('分组大小必须为8的倍数/Block size should be a multiple of 8.')
-        self._block_size = block_size
-        self._block_byte_len = self._block_size // 8
-
-        self._tweak = tweak
-        self._step_mask = tweak_enc_func(self._tweak)
-        self._is_encrypt = is_encrypt
+class XTS(Mode):
+    def __init__(self, algorithm: BlockCipherAlgorithm = None):
+        super().__init__(algorithm)
+        self._step_mask = None
 
         self._buffer = bytearray()
+
+    def set_algorithm(self, algorithm: BlockCipherAlgorithm):
+        super().set_algorithm(algorithm)
+        if self._block_size != 128:
+            raise ValueError("XTS模式目前只支持128-bit的分组长度/Only 128-bit block algorithm is supported by XTS mode.")
+
+    def set_tweak(self, tweak: Union[bytes, bytearray, memoryview], tweak_algorithm: BlockCipherAlgorithm):
+        self._step_mask = tweak_algorithm.encrypt_block(tweak)  # 初始掩码由调柄（tweak）值进行分组加密计算获得
 
     POLYNOMIAL_ALPHA: int = 1 << 126
 
     @staticmethod
     def _next_step_mask(polynomial_mask: bytes):
+        """计算下个分组的输入输出掩码，即使用GF(2^128）上的多项式乘法乘以不定元{\\alpha}"""
         return mul_gf_2_128(int.from_bytes(polynomial_mask, byteorder='big', signed=False),
                             XTS.POLYNOMIAL_ALPHA).to_bytes(length=16, byteorder='big', signed=False)
 
-    def _process_block(self, in_block: Union[bytes, bytearray, memoryview]) -> bytes:
-        print('In block :', in_block.hex())
-        print('Mask     :', self._step_mask.hex())
-        enc_in = xor_on_bytes(self._step_mask, in_block)
-        print('Encrypt I:', enc_in.hex())
-        enc_out = self._function(enc_in)
-        print('Encrypt O:', enc_out.hex())
-        out_block = xor_on_bytes(self._step_mask, enc_out)
-        print('Out block:', out_block.hex())
-        print()
+    class InnerCodec(Codec, ABC):
+        def __init__(self, mode: 'XTS'):
+            self._mode = mode
+            self._step_mask = mode._step_mask
+            self._algorithm = mode._algorithm
+            self._block_byte_len = mode._block_byte_len
 
-        return bytes(out_block)
+            self._buffer = bytearray()
 
-    def _process_buffer(self):
-        out_octets = bytearray()
-        in_octets = memoryview(self._buffer)
-        buffer_len = len(self._buffer)
-        m = 0
-        while m < buffer_len - 2 * self._block_byte_len:  # 至少保留两个分组
-            n = m + self._block_byte_len
-            out_octets.extend(self._process_block(in_octets[m:n]))
+        @abstractmethod
+        def _process_block(self, in_block: Union[bytes, bytearray, memoryview]):
+            raise NotImplementedError()
+
+        def _process_buffer(self) -> bytearray:
+            out_octets = bytearray()
+            in_octets = memoryview(self._buffer)
+            buffer_len = len(self._buffer)
+            m = 0
+            n = self._block_byte_len
+            while n <= buffer_len - self._block_byte_len:  # 保留至少一个完整分组以及可能的后续不足一个分组
+                out_octets.extend(self._process_block(in_octets[m:n]))  # 计算当前分组的密文/明文
+                self._step_mask = XTS._next_step_mask(self._step_mask)  # 计算下一组的掩码
+                m = n
+                n = m + self._block_byte_len
+            self._buffer = self._buffer[m:]
+            return out_octets
+
+        def update(self, octets: Union[bytes, bytearray, memoryview]) -> bytes:
+            self._buffer.extend(octets)
+            return bytes(self._process_buffer())
+
+        @abstractmethod
+        def _do_stealing(self, in_octets: memoryview, d: int, n_d: int, out_octets: bytearray) -> bytes:
+            """实现最后两组密文/明文（最后一组不足分组长度）的挪用"""
+            raise NotImplementedError()
+
+        def finalize(self) -> bytes:
+            buffer_len = len(self._buffer)
+            assert buffer_len < 2 * self._block_byte_len
+            if buffer_len < self._block_byte_len:
+                raise ValueError(
+                    '数据长度不足一个分组，需要补齐/Data is shorter than one block, so padding is required.')
+
+            in_octets = memoryview(self._buffer)
+            out_octets = bytearray()
+
+            if buffer_len == self._block_byte_len:  # 只有一个完整分组时，无需密文挪用
+                out_octets.extend(self._process_block(in_octets))
+            else:  # 剩余一个完整分组和后续不足一个分组时，进行密文挪用
+                d = buffer_len - self._block_byte_len
+                n_d = self._block_byte_len - d
+                self._do_stealing(in_octets, d, n_d, out_octets)  # 将最后两个分组进行密文挪用（最后一个分组不完整）
+            return bytes(out_octets)
+
+    class Encryptor(InnerCodec):
+        def __init__(self, mode: 'XTS'):
+            super().__init__(mode)
+
+        def _process_block(self, in_block: Union[bytes, bytearray, memoryview]) -> bytes:
+            enc_in = xor_on_bytes(self._step_mask, in_block)
+            enc_out = self._algorithm.encrypt_block(enc_in)
+            out_block = xor_on_bytes(self._step_mask, enc_out)
+            return bytes(out_block)
+
+        def _do_stealing(self, in_octets: memoryview, d: int, n_d: int, out_octets: bytearray) -> bytes:
+            c_ql = self._process_block(in_octets[0:self._block_byte_len])  # 计算倒数第二组密文
+            self._step_mask = XTS._next_step_mask(self._step_mask)  # 计算下一组掩码
+            ex = bytearray(in_octets[self._block_byte_len:])
+            ex.extend(c_ql[-n_d:])
+            c_q = self._process_block(ex)
+
+            out_octets.extend(c_q)
+            out_octets.extend(c_ql[0:d])
+
+    class Decryptor(InnerCodec):
+        def __init__(self, mode: 'XTS'):
+            super().__init__(mode)
+
+        def _process_block(self, in_block: Union[bytes, bytearray, memoryview]) -> bytes:
+            enc_in = xor_on_bytes(self._step_mask, in_block)
+            enc_out = self._algorithm.decrypt_block(enc_in)
+            out_block = xor_on_bytes(self._step_mask, enc_out)
+            return bytes(out_block)
+
+        def _do_stealing(self, in_octets: memoryview, d: int, n_d: int, out_octets: bytearray) -> bytes:
+            mask_ql = self._step_mask
             self._step_mask = XTS._next_step_mask(self._step_mask)
-            m = n
-        self._buffer = self._buffer[m:]
-        return out_octets
+            p_q = self._process_block(in_octets[0:self._block_byte_len])
+            ex = bytearray(in_octets[self._block_byte_len:])
+            ex.extend(p_q[-n_d:])
+            self._step_mask = mask_ql
+            p_ql = self._process_block(ex)
+            out_octets.extend(p_ql)
+            out_octets.extend(p_q[0:d])
 
-    def update(self, octets: Union[bytes, bytearray, memoryview]) -> bytes:
-        self._buffer.extend(octets)
-        return bytes(self._process_buffer())
+    def encryptor(self):
+        return XTS.Encryptor(self)
 
-    def finalize(self) -> bytes:
-        out_octets = self._process_buffer()
-        buffer_len = len(self._buffer)
-        in_octets = memoryview(self._buffer)
-        if buffer_len < self._block_byte_len:
-            raise ValueError('数据长度不足一个分组，需要补齐/Data is shorter than one block, so padding is required.')
-
-        if buffer_len == 2 * self._block_byte_len:
-            out_octets.extend(self._process_block(in_octets[0:self._block_byte_len]))
-            out_octets.extend(self._process_block(in_octets[self._block_byte_len:]))
-        else:
-            d = buffer_len - self._block_byte_len
-            n_d = self._block_byte_len - d
-            if self._is_encrypt:
-                c_ql = self._process_block(in_octets[0:self._block_byte_len])
-                self._step_mask = XTS._next_step_mask(self._step_mask)
-                ex = bytearray(in_octets[self._block_byte_len:])
-                ex.extend(c_ql[-n_d:])
-                c_q = self._process_block(ex)
-
-                out_octets.extend(c_q)
-                print(c_q.hex())
-                out_octets.extend(c_ql[0:d])
-                print(c_ql[0:d].hex())
-            else:
-                mask_ql = self._step_mask
-                self._step_mask = XTS._next_step_mask(self._step_mask)
-                p_q = self._process_block(in_octets[0:self._block_byte_len])
-                ex = bytearray(in_octets[self._block_byte_len:])
-                ex.extend(p_q[-n_d:])
-                self._step_mask = mask_ql
-                p_ql = self._process_block(ex)
-                out_octets.extend(p_ql)
-                out_octets.extend(p_q[0:d])
-        return bytes(out_octets)
-
+    def decryptor(self):
+        return XTS.Decryptor(self)
