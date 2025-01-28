@@ -56,6 +56,9 @@ class PKCS7Padding(Codec):
                 raise PaddingException("经过填充的数据长度不是分组长度的整数倍"
                                        "/Length of padded data is not a multiple of block size")
             padding_len = self._buffer[-1]
+            if padding_len == 0 or padding_len > self._block_size:
+                raise PaddingException("数据填充格式错误，填充长度为0或者超过了分组字节长度"
+                                       "/Length of padded data is incorrect.")
             for i in range(-padding_len, 0):
                 if self._buffer[i] != padding_len:
                     raise PaddingException("填充数据格式错误/Padded data is mal-formatted.")
@@ -232,7 +235,7 @@ def length_prefixed_unpad(data: Union[bytes, bytearray], block_size: int) -> byt
 class ZeroPadding(Codec):
     """ISO9797M1填充方法
 
-    GB/T 15852.1-2020 (ISO/IEC 9797-1）中规定的填充方法1，也称为全0填充方法。
+    GB/T 15852.1-2020 (ISO/IEC 9797-1）中规定的填充方法1，也称为全0填充方法。适合用于验证码计算，但不适合用于加解密。
     """
     def __init__(self, block_size: int, mode_padding, padding_byte_len: Optional[int] = None):
         super().__init__()

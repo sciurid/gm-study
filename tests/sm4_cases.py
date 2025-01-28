@@ -244,11 +244,8 @@ class SM4TestCase(unittest.TestCase):
 
     def test_sm4_simple_case(self):
         plain_text = '飞流直下三千尺，疑似银河落九天。'.encode('utf-8')
-        print(plain_text.hex())
         secret_key = secrets.randbits(SM4.BLOCK_SIZE).to_bytes(16, byteorder='big', signed=False)
         iv = secrets.randbits(SM4.BLOCK_SIZE).to_bytes(16, byteorder='big', signed=False)
-        print(secret_key.hex())
-        print(iv.hex())
 
         encryptor = SM4Encryptor(secret_key, 'CBC', 'PKCS7', iv=iv)
         cipher_text = encryptor.update(plain_text) + encryptor.finalize()
@@ -280,6 +277,10 @@ class SM4TestCase(unittest.TestCase):
         secret_key = secrets.randbits(SM4.BLOCK_SIZE).to_bytes(16, byteorder='big', signed=False)
         tweak_key = secrets.randbits(SM4.BLOCK_SIZE).to_bytes(16, byteorder='big', signed=False)
         iv_tweak = secrets.randbits(SM4.BLOCK_SIZE).to_bytes(16, byteorder='big', signed=False)
+
+        for mode in ('ECB', 'CBC', 'CFB8', 'CFB128', 'OFB8', 'OFB128', 'CTR', 'XTS'):
+            for padding in ('PKCS7', 'ISO9797M2'):
+                self.do_test_text(data, secret_key, iv_tweak, tweak_key, mode, padding)
 
         # ECB
         self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'ECB', 'PKCS7')

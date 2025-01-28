@@ -175,7 +175,7 @@ class CTR(Mode):
             self._last_counter = mode._iv
             self._block_byte_len = mode._block_byte_len
             self._algorithm = mode._algorithm
-            self._overflow = 1 << mode._algorithm.block_byte_len
+            self._overflow = 1 << mode._algorithm.block_size
 
         def _process_block(self, in_block: Union[bytes, bytearray, memoryview]) -> bytes:
             mask = self._algorithm.encrypt_block(self._last_counter)  # 计数器加密为分组掩码
