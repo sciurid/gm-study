@@ -78,26 +78,11 @@ def _i2b(n: int):
     return int.to_bytes(n, length=SM2_P_BYTE_LEN, byteorder="big")
 
 
-def jacobian_add(x1: Optional[int], y1: Optional[int], x2: Optional[int], y2: Optional[int])\
-        -> Union[Tuple[None, None], Tuple[int, int]]:
+def jacobian_add(x1: int, y1: int, x2: int, y2: int) -> Union[Tuple[int, int], Tuple[None, None]]:
     """GB/T 32918.1-2016 A.1.2.3.2 Jacobian加重射影坐标系上的点加法。
 
-    比仿射坐标系下的计算量要小。
+    比仿射坐标系下的计算量要小。不处理O+P/P+O的情况。
     """
-    assert (x1 is None) == (y1 is None)
-    assert (x2 is None) == (y2 is None)
-    if x1 is None:
-        if x2 is None:  # O + O = O
-            return None, None
-        else:
-            return x2, y2  # O + P = P
-    else:
-        if x2 is None:
-            return x1, y1  # P + O = P
-
-    assert on_curve(x1, y1)
-    assert on_curve(x2, y2)
-
     if x1 == x2:
         if y1 == y2:  # 倍点
             l1 = p_add(p_muls(x1, x1, 3), SM2_A)
@@ -180,28 +165,30 @@ class SM2Point:
             # assert other._y is None
             return self
 
-        if self._x == other._x:
-            if self._y == other._y:  # 倍点规则，GB/T 32918.1-2016 3.2.3.1 d) (P4)
-                assert self._y != 0
-                _lambda_numerator = p_add(p_mul(3, p_pow(self._x, 2)), SM2_A)  # x ** 2 * 3 + a
-                _lambda_denominator = p_mul(2, self._y)  # 2 * y
-                _lambda = p_div(_lambda_numerator, _lambda_denominator)
+        x, y = jacobian_add(self._x, self._y, other._x, other._y)
+        return SM2Point(x, y)
 
-                x = p_minus(p_pow(_lambda, 2), p_mul(2, self._x))  # lambda ** 2 - 2 * x
-                y = p_minus(p_mul(_lambda, p_minus(self._x, x)), self._y)
-
-                return SM2Point(x, y)
-            if p_add(self._y, other._y) == 0:  # 互逆点相加结果为无穷远点O
-                return SM2Point(None, None)
-
-            raise ValueError(f"Impossible condition: {self} + {other}")
-        else:  # 非互逆不同点相加规则，GB/T 32918.1-2016 3.2.3.1 d) (P4)
-            _lambda_numerator = p_minus(other._y, self._y)  # y2 - y1
-            _lambda_denominator = p_minus(other._x, self._x)  # x2 - x1
-            _lambda = p_div(_lambda_numerator, _lambda_denominator)
-            x = p_minus(p_pow(_lambda, 2), p_add(self._x, other._x))  # lambda ** 2 - x1 - x2
-            y = p_minus(p_mul(_lambda, p_minus(self._x, x)), self._y)  # lambda * (x1 - x3) - y1
-            return SM2Point(x, y)
+        # if self._x == other._x:
+        #     if self._y == other._y:  # 倍点规则，GB/T 32918.1-2016 3.2.3.1 d) (P4)
+        #         assert self._y != 0
+        #         _lambda_numerator = p_add(p_mul(3, p_pow(self._x, 2)), SM2_A)  # x ** 2 * 3 + a
+        #         _lambda_denominator = p_mul(2, self._y)  # 2 * y
+        #         _lambda = p_div(_lambda_numerator, _lambda_denominator)
+        #
+        #         x = p_minus(p_pow(_lambda, 2), p_mul(2, self._x))  # lambda ** 2 - 2 * x
+        #         y = p_minus(p_mul(_lambda, p_minus(self._x, x)), self._y)
+        #         return SM2Point(x, y)
+        #     if p_add(self._y, other._y) == 0:  # 互逆点相加结果为无穷远点O
+        #         return SM2Point(None, None)
+        #
+        #     raise ValueError(f"Impossible condition: {self} + {other}")
+        # else:  # 非互逆不同点相加规则，GB/T 32918.1-2016 3.2.3.1 d) (P4)
+        #     _lambda_numerator = p_minus(other._y, self._y)  # y2 - y1
+        #     _lambda_denominator = p_minus(other._x, self._x)  # x2 - x1
+        #     _lambda = p_div(_lambda_numerator, _lambda_denominator)
+        #     x = p_minus(p_pow(_lambda, 2), p_add(self._x, other._x))  # lambda ** 2 - x1 - x2
+        #     y = p_minus(p_mul(_lambda, p_minus(self._x, x)), self._y)  # lambda * (x1 - x3) - y1
+        #     return SM2Point(x, y)
 
     def __mul__(self, k: int) -> 'SM2Point':
         """SM2点的整数倍"""
