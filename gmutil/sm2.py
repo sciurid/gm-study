@@ -15,53 +15,57 @@ SM2_ECLIPSE_CURVE = {
     'b': '28E9FA9E9D9F5E344D5A9E4BCF6509A7F39789F515AB8F92DDBCBD414D940E93'
 }
 
-ECC_P = int(SM2_ECLIPSE_CURVE['p'], base=16)
-ECC_N = int(SM2_ECLIPSE_CURVE['n'], base=16)
-ECC_A = int(SM2_ECLIPSE_CURVE['a'], base=16)
-ECC_B = int(SM2_ECLIPSE_CURVE['b'], base=16)
-ECC_X = int(SM2_ECLIPSE_CURVE['x'], base=16)
-ECC_Y = int(SM2_ECLIPSE_CURVE['y'], base=16)
-ECC_LEN = ECC_P.bit_length() // 8
+SM2_P = int(SM2_ECLIPSE_CURVE['p'], base=16)
+SM2_N = int(SM2_ECLIPSE_CURVE['n'], base=16)
+SM2_A = int(SM2_ECLIPSE_CURVE['a'], base=16)
+SM2_B = int(SM2_ECLIPSE_CURVE['b'], base=16)
+SM2_X = int(SM2_ECLIPSE_CURVE['x'], base=16)
+SM2_Y = int(SM2_ECLIPSE_CURVE['y'], base=16)
+SM2_P_BYTE_LEN = SM2_P.bit_length() // 8
 
 
 def p_add(a: int, b: int) -> int:
-    return add_mod_prime(ECC_P, a, b)
+    return add_mod_prime(SM2_P, a, b)
 
 
 def p_adds(*args):
-    return add_mod_prime(ECC_P, *args)
+    return adds_mod_prime(SM2_P, *args)
 
 
 def p_minus(a: int, b: int) -> int:
-    return minus_mod_prime(ECC_P, a, b)
+    return minus_mod_prime(SM2_P, a, b)
 
 
 def p_mul(a: int, b: int) -> int:
-    return mul_mod_prime(ECC_P, a, b)
+    return mul_mod_prime(SM2_P, a, b)
+
+
+def p_muls(*args):
+    return muls_mod_prime(SM2_P, *args)
 
 
 def p_pow(n: int, k: int) -> int:
-    return pow_mod_prime(ECC_P, n, k)
+    return pow_mod_prime(SM2_P, n, k)
 
 
 def p_div(a: int, b: int) -> int:
-    return (a * inverse_mod_prime(ECC_P, b)) % ECC_P
+    return (a * inverse_mod_prime(SM2_P, b)) % SM2_P
 
 
 def p_sqrt(n: int) -> Optional[int]:
-    return square_root_mod_prime(ECC_P, n)
+    return square_root_mod_prime(SM2_P, n)
 
 
 def on_curve(x: int, y: int) -> int:
     """检查点(x,y)是否在SM2椭圆曲线上"""
-    left = (y ** 2) % ECC_P
-    right = (x ** 3 + ECC_A * x + ECC_B) % ECC_P
+    left = (y ** 2) % SM2_P
+    right = (x ** 3 + SM2_A * x + SM2_B) % SM2_P
     return left == right
 
 
 def calculate_y(x: int) -> int:
     """根据SM2椭圆曲线上点的x计算对应的y"""
-    return p_sqrt((x ** 3 + ECC_A * x + ECC_B) % ECC_P)
+    return p_sqrt((x ** 3 + SM2_A * x + SM2_B) % SM2_P)
 
 
 def _i2h(n: int) -> Optional[str]:
@@ -71,7 +75,68 @@ def _i2h(n: int) -> Optional[str]:
 
 def _i2b(n: int):
     """将整数值转化为长度为ECC的字节串，用于点坐标的转换"""
-    return int.to_bytes(n, length=ECC_LEN, byteorder="big")
+    return int.to_bytes(n, length=SM2_P_BYTE_LEN, byteorder="big")
+
+
+def jacobian_add(x1: Optional[int], y1: Optional[int], x2: Optional[int], y2: Optional[int])\
+        -> Union[Tuple[None, None], Tuple[int, int]]:
+    """GB/T 32918.1-2016 A.1.2.3.2 Jacobian加重射影坐标系上的点加法。
+
+    比仿射坐标系下的计算量要小。
+    """
+    assert (x1 is None) == (y1 is None)
+    assert (x2 is None) == (y2 is None)
+    if x1 is None:
+        if x2 is None:  # O + O = O
+            return None, None
+        else:
+            return x2, y2  # O + P = P
+    else:
+        if x2 is None:
+            return x1, y1  # P + O = P
+
+    assert on_curve(x1, y1)
+    assert on_curve(x2, y2)
+
+    if x1 == x2:
+        if y1 == y2:  # 倍点
+            l1 = p_add(p_muls(x1, x1, 3), SM2_A)
+            l2 = p_muls(x1, y1, y1, 4)
+            l3 = p_mul(p_pow(y1, 4), 8)
+            x3_ = p_mul(l1, l1) - p_mul(l2, 2)
+            y3_ = p_minus(p_mul(l1, p_minus(l2, x3_)), l3)
+            z3_ = p_mul(2, y1)
+
+            d = p_mul(z3_, z3_)
+            x3 = p_div(x3_, d)
+            d = p_mul(d, z3_)
+            y3 = p_div(y3_, d)
+            return x3, y3
+
+        else:  # 逆元素相加
+            assert p_add(y1, y2) == 0
+            return None, None
+    else:
+        l1 = x1
+        l2 = x2
+        l3 = p_minus(l1, l2)
+        l4 = y1
+        l5 = y2
+        l6 = p_minus(l4, l5)
+        l7 = p_add(l1, l2)
+        l8 = p_add(l4, l5)
+
+        l3_2 = p_mul(l3, l3)
+        l3_3 = p_mul(l3_2, l3)
+        x3_ = p_minus(p_mul(l6, l6), p_mul(l7, l3_2))
+        y3_ = p_minus(p_mul(l6, p_minus(p_mul(l1, l3_2), x3_)), p_mul(l4, l3_3))
+        z3_ = l3
+
+        d = p_mul(z3_, z3_)
+        x3 = p_div(x3_, d)
+        d = p_mul(d, z3_)
+        y3 = p_div(y3_, d)
+        return x3, y3
 
 
 class SM2Point:
@@ -82,7 +147,7 @@ class SM2Point:
 
         如果x和y都是None，则表示无穷远点O
         """
-        assert (x is None and y is None) or (0 <= x < ECC_P and 0 <= y < ECC_P)
+        assert (x is None and y is None) or (0 <= x < SM2_P and 0 <= y < SM2_P)
         self._x = x
         self._y = y
         assert (self._x is None) == (self._y is None)
@@ -118,7 +183,7 @@ class SM2Point:
         if self._x == other._x:
             if self._y == other._y:  # 倍点规则，GB/T 32918.1-2016 3.2.3.1 d) (P4)
                 assert self._y != 0
-                _lambda_numerator = p_add(p_mul(3, p_pow(self._x, 2)), ECC_A)  # x ** 2 * 3 + a
+                _lambda_numerator = p_add(p_mul(3, p_pow(self._x, 2)), SM2_A)  # x ** 2 * 3 + a
                 _lambda_denominator = p_mul(2, self._y)  # 2 * y
                 _lambda = p_div(_lambda_numerator, _lambda_denominator)
 
@@ -144,7 +209,7 @@ class SM2Point:
         next_pow = self
 
         mask = 1
-        for r in range(ECC_LEN * 8):
+        for r in range(SM2_P_BYTE_LEN * 8):
             if k & mask != 0:
                 res += next_pow
             mask <<= 1
@@ -215,34 +280,34 @@ class SM2Point:
         """
         pc = octets[0]
         if pc == 0x04:
-            if len(octets) != 2 * ECC_LEN + 1:
-                raise ValueError(f"SM2点未压缩格式长度{len(octets)}不符合标准，应当为{2 * ECC_LEN + 1}")
-            x = int.from_bytes(octets[1:ECC_LEN + 1], byteorder='big')
-            y = int.from_bytes(octets[ECC_LEN + 1:], byteorder='big')
+            if len(octets) != 2 * SM2_P_BYTE_LEN + 1:
+                raise ValueError(f"SM2点未压缩格式长度{len(octets)}不符合标准，应当为{2 * SM2_P_BYTE_LEN + 1}")
+            x = int.from_bytes(octets[1:SM2_P_BYTE_LEN + 1], byteorder='big')
+            y = int.from_bytes(octets[SM2_P_BYTE_LEN + 1:], byteorder='big')
             return SM2Point(x, y)
         elif pc == 0x02 or pc == 0x03:
             y_p = 0x00 if pc == 0x02 else 0x01
-            if len(octets) != ECC_LEN + 1:
-                raise ValueError(f"SM2点压缩格式长度{len(octets)}不符合标准，应当为{ECC_LEN + 1}")
+            if len(octets) != SM2_P_BYTE_LEN + 1:
+                raise ValueError(f"SM2点压缩格式长度{len(octets)}不符合标准，应当为{SM2_P_BYTE_LEN + 1}")
             x = int.from_bytes(octets[1:], byteorder='big')
-            y_pow = p_adds(p_pow(x, 3), p_mul(ECC_A, x), ECC_B)  # GB/T 32918.1-2016 A.5.2
+            y_pow = p_adds(p_pow(x, 3), p_mul(SM2_A, x), SM2_B)  # GB/T 32918.1-2016 A.5.2
             y = p_sqrt(y_pow)
 
             if y & 0x01 == y_p:
                 return SM2Point(x, y)
             else:
-                return SM2Point(x, ECC_P - y)
+                return SM2Point(x, SM2_P - y)
         elif pc == 0x06 or pc == 0x07:
             y_p = 0x00 if pc == 0x06 else 0x01
-            y = int.from_bytes(octets[ECC_LEN + 1:], byteorder='big')
-            if len(octets) != 2 * ECC_LEN + 1:
-                raise ValueError(f"SM2点混合格式长度{len(octets)}不符合标准，应当为{2 * ECC_LEN + 1}")
+            y = int.from_bytes(octets[SM2_P_BYTE_LEN + 1:], byteorder='big')
+            if len(octets) != 2 * SM2_P_BYTE_LEN + 1:
+                raise ValueError(f"SM2点混合格式长度{len(octets)}不符合标准，应当为{2 * SM2_P_BYTE_LEN + 1}")
             x = int.from_bytes(octets[1:], byteorder='big')
-            ry_pow = p_adds(p_pow(x, 3), p_mul(ECC_A, x), ECC_B)
+            ry_pow = p_adds(p_pow(x, 3), p_mul(SM2_A, x), SM2_B)
             ry = p_sqrt(ry_pow)
 
             if ry & 0x01 == y_p:
-                ry = ECC_P - ry
+                ry = SM2_P - ry
             if ry != y:
                 raise ValueError("SM2点混合格式中存储的y值与x值和pc值恢复出的不一致")
 
@@ -256,7 +321,7 @@ class SM2Point:
         return f'Point(x={self.x_octets.hex()}, y={self.y_octets.hex()})'
 
 
-POINT_G = SM2Point(ECC_X, ECC_Y)  # SM2曲线的基点G
+POINT_G = SM2Point(SM2_X, SM2_Y)  # SM2曲线的基点G
 
 _POINT_G_EXPONENT_2_VALUES = []  # 基点G的2的幂倍列表，用于快速计算公钥
 
@@ -266,7 +331,7 @@ def _init_quick_mul_g_point():
     global _POINT_G_EXPONENT_2_VALUES
     if len(_POINT_G_EXPONENT_2_VALUES) == 0:
         _gbv = POINT_G
-        for i in range(ECC_LEN * 8):
+        for i in range(SM2_P_BYTE_LEN * 8):
             _POINT_G_EXPONENT_2_VALUES.append(_gbv)
             _gbv += _gbv
 
@@ -275,12 +340,12 @@ def _init_quick_mul_g_point():
 
 
 def quick_mul_g_point(n: int) -> 'SM2Point':
-    """快速计算基点G的方法"""
+    """快速计算倍乘基点G的方法"""
     _init_quick_mul_g_point()
     global _POINT_G_EXPONENT_2_VALUES
     p = SM2Point(None, None)
     mask = 1
-    for i in range(ECC_LEN * 8):
+    for i in range(SM2_P_BYTE_LEN * 8):
         if n & mask != 0:
             p += _POINT_G_EXPONENT_2_VALUES[i]
         mask <<= 1
@@ -306,10 +371,10 @@ def generator_z(p: SM2Point, uid: bytes) -> bytes:
     buffer = bytearray()
     buffer.extend(entl)
     buffer.extend(uid)
-    buffer.extend(_i2b(ECC_A))
-    buffer.extend(_i2b(ECC_B))
-    buffer.extend(_i2b(ECC_X))
-    buffer.extend(_i2b(ECC_Y))
+    buffer.extend(_i2b(SM2_A))
+    buffer.extend(_i2b(SM2_B))
+    buffer.extend(_i2b(SM2_X))
+    buffer.extend(_i2b(SM2_Y))
     buffer.extend(_i2b(p.x))
     buffer.extend(_i2b(p.y))
     logger.debug('预处理输入: %s', buffer.hex())
@@ -348,22 +413,22 @@ class SM2PublicKey:
         :parm id_a: 用户ID，长度不超过0xffff
         :return: 验签结果
         """
-        if len(signature) != 2 * ECC_LEN:
+        if len(signature) != 2 * SM2_P_BYTE_LEN:
             raise ValueError("签名数据长度错误（{}），请检查是否包含了额外的数据头或其他格式".format(len(signature)))
-        r = int.from_bytes(signature[0:ECC_LEN], byteorder='big')
-        logger.debug("r=%s", signature[0:ECC_LEN].hex())
-        s = int.from_bytes(signature[ECC_LEN:], byteorder='big')
-        logger.debug("s=%s", signature[ECC_LEN:].hex())
+        r = int.from_bytes(signature[0:SM2_P_BYTE_LEN], byteorder='big')
+        logger.debug("r=%s", signature[0:SM2_P_BYTE_LEN].hex())
+        s = int.from_bytes(signature[SM2_P_BYTE_LEN:], byteorder='big')
+        logger.debug("s=%s", signature[SM2_P_BYTE_LEN:].hex())
         buffer = bytearray(generator_z(self._point, uid))
         buffer.extend(message)
         e = int.from_bytes(sm3_hash(buffer), byteorder='big', signed=False)
-        t = (r + s) % ECC_N  # Prove: t == (k + r) / (1 + d)
+        t = (r + s) % SM2_N  # Prove: t == (k + r) / (1 + d)
         if t == 0:
             return False
 
         pr = POINT_G * s + self._point * t  # Prove: pr == [k]G
         logger.debug("[k]G=%s", pr)
-        vr = (e + pr.x) % ECC_N
+        vr = (e + pr.x) % SM2_N
         logger.debug("r=%064x", vr)
         return vr == r
 
@@ -377,7 +442,7 @@ class SM2PublicKey:
         """
 
         while True:
-            k = secrets.randbelow(ECC_N - 1) + 1
+            k = secrets.randbelow(SM2_N - 1) + 1
             logger.debug("k=%s", _i2h(k))
             buffer = bytearray()
 
@@ -427,8 +492,8 @@ class SM2PublicKey:
 
 class SM2PrivateKey:
     def __init__(self, secret: Optional[int] = None):
-        assert secret is None or 0 < secret < ECC_N - 1
-        self._secret = secrets.randbelow(ECC_N - 2) + 1 if secret is None else secret
+        assert secret is None or 0 < secret < SM2_N - 1
+        self._secret = secrets.randbelow(SM2_N - 2) + 1 if secret is None else secret
         self._pub_key = None
 
     @property
@@ -445,7 +510,7 @@ class SM2PrivateKey:
         return self.get_public_key().point
 
     def to_bytes(self) -> bytes:
-        return int.to_bytes(self._secret, length=ECC_LEN, byteorder='big')
+        return int.to_bytes(self._secret, length=SM2_P_BYTE_LEN, byteorder='big')
 
     @staticmethod
     def from_bytes(octets: bytes) -> 'SM2PrivateKey':
@@ -468,14 +533,14 @@ class SM2PrivateKey:
         e = int.from_bytes(sm3_hash(buffer), byteorder='big', signed=False)
 
         while True:
-            k = secrets.randbelow(ECC_N - 1) + 1
+            k = secrets.randbelow(SM2_N - 1) + 1
             p = POINT_G * k
             logger.debug('[k]G=%s', p)
-            r = (e + p.x) % ECC_N
-            if r == 0 or r + k == ECC_N:
+            r = (e + p.x) % SM2_N
+            if r == 0 or r + k == SM2_N:
                 continue
             logger.debug("r=%s", _i2h(r))
-            s = (inverse_mod_prime(ECC_N, 1 + self._secret) * (k - r * self._secret) % ECC_N) % ECC_N
+            s = (inverse_mod_prime(SM2_N, 1 + self._secret) * (k - r * self._secret) % SM2_N) % SM2_N
             if s == 0:
                 continue
             logger.debug("s=%s", _i2h(s))
@@ -494,13 +559,13 @@ class SM2PrivateKey:
         """
 
         if mode == 'C1C3C2':
-            pivot_1 = 2 * ECC_LEN + 1
+            pivot_1 = 2 * SM2_P_BYTE_LEN + 1
             pivot_2 = pivot_1 + 32
             c1 = cipher_text[0:pivot_1]
             c3 = cipher_text[pivot_1:pivot_2]
             c2 = cipher_text[pivot_2:]
         elif mode == 'C1C2C3':
-            pivot_1 = 2 * ECC_LEN + 1
+            pivot_1 = 2 * SM2_P_BYTE_LEN + 1
             pivot_2 = len(cipher_text) - 32
             c1 = cipher_text[0:pivot_1]
             c2 = cipher_text[pivot_1:pivot_2]
@@ -561,12 +626,12 @@ class SM2KeyExchange:
         self._uid = uid
         self._k_byte_len = k_byte_len
         # GB/T 32918.3-2016 6.1 A1-A2/B1-B2
-        r = secrets.randbelow(ECC_N - 1) + 1
+        r = secrets.randbelow(SM2_N - 1) + 1
         self._point_r = POINT_G * r
 
         # GB/T 32918.3-2016 6.1 A1-A2/B1-B2
         x_bar = SM2KeyExchange._x_bar(self._point_r.x)
-        self._t = (self._private_key.value + x_bar * r) % ECC_N
+        self._t = (self._private_key.value + x_bar * r) % SM2_N
 
         # 在密钥计算阶段保存用于B8、A9、A10、B10步骤的数据
         self._exchanged_key = None
@@ -575,7 +640,7 @@ class SM2KeyExchange:
         self._point_uv = None
         self._other_point_r = None
 
-    W = ((ECC_N - 1).bit_length() + 1) // 2 - 1
+    W = ((SM2_N - 1).bit_length() + 1) // 2 - 1
 
     @staticmethod
     def _x_bar(x: int) -> int:

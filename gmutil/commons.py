@@ -1,5 +1,11 @@
 from typing import Union
 from abc import ABC, abstractmethod
+from os.path import join, abspath, pardir
+import json
+
+OBJECT_IDENTIFIERS = {}
+with open(abspath(join(__file__, pardir, 'gmt-0006-oids.json')), 'r', encoding='utf-8') as f:
+    OBJECT_IDENTIFIERS.update(json.load(f))
 
 
 class Codec(ABC):

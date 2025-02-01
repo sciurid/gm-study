@@ -25,6 +25,13 @@ def mul_mod_prime(p: int, a: int, b: int) -> int:
     return (a * b) % p
 
 
+def muls_mod_prime(p: int, *args) -> int:
+    res = 1
+    for arg in args:
+        res = mul_mod_prime(p, res, arg)
+    return res
+
+
 def pow_mod_prime(p: int, n: int, k: int):
     """快速计算n ** k % p的方法"""
     if k == 0:

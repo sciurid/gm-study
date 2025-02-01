@@ -1,67 +1,69 @@
 from unittest import TestCase
+from asn1util import *
+from gmutil import *
 
-from gmutil.calculation import *
-from gmutil.sm4 import *
+from os.path import join, abspath, pardir
+
+
+class CertificateException(Exception):
+
+    def __init__(self, *args):
+        super().__init__(*args)
+
 
 class InDevelopmentTestCase(TestCase):
     def test_dev_xts(self):
-        key_1 = bytes.fromhex('2B7E151628AED2A6ABF7158809CF4F3C')
-        key_2 = bytes.fromhex('000102030405060708090A0B0C0D0E0F')
-        tw = bytes.fromhex('F0F1F2F3F4F5F6F7F8F9FAFBFCFDFEFF')
+        cert_file = abspath(join(__file__, pardir, 'x509samples', 'sm2.oca.der'))
+        with open(cert_file, 'rb') as cf:
+            cert_data = cf.read()
 
-        ek_tw_1 = sm4_encrypt_block(message=tw, secret_key=key_2)
-        print(ek_tw_1.hex())
-        p_1 = bytes.fromhex('6BC1BEE22E409F96E93D7E117393172A')
+        cert_t, cert_l, cert_v = read_next_tlv(cert_data)
 
-        input_1 = xor_on_bytes(p_1, ek_tw_1)
-        print(input_1.hex())   # 数据加密分组密码输入分组
-        output_1 = sm4_encrypt_block(input_1, secret_key=key_1)
-        print(output_1.hex())  # 数据加密分组密码输出分组
-        c_1 = xor_on_bytes(output_1, ek_tw_1)
-        print(c_1.hex())
+        total_len = len(cert_t) + len(cert_l) + len(cert_v)
 
-        print()
+        if total_len < len(cert_data):
+            raise CertificateException('格式错误：数字证书格式外有冗余数据'
+                                       '/Redundant data besides certificate data.')
 
-        p_2 = bytes.fromhex('AE2D8A571E03AC9C9EB76FAC45AF8E51')
-        # 0b11100001 << 120
-        ek_tw_2 = (mul_gf_2_128(int.from_bytes(ek_tw_1, byteorder='big', signed=False), 1 << 126, False)
-                   .to_bytes(16, byteorder='big', signed=False))
-        print(ek_tw_2.hex())
+        cert_elements = asn1_decode(cert_v)
 
-        input_2 = xor_on_bytes(p_2, ek_tw_2)
-        print(input_2.hex())  # 数据加密分组密码输入分组
-        output_2 = sm4_encrypt_block(input_2, secret_key=key_1)
-        print(output_2.hex())  # 数据加密分组密码输出分组
-        c_2 = xor_on_bytes(output_2, ek_tw_2)
-        print(c_2.hex())
+        if len(cert_elements) != 3:
+            raise CertificateException('格式错误：Certificate的元素数不为3'
+                                       '/"Certificate" does NOT contain 3 elements.')
+        tbsCertificate, signatureAlgorithm, signatureValue = cert_elements
 
-        print()
+        # 解析signatureAlgorithm域
+        if signatureAlgorithm.tag != TAG_Sequence:
+            raise CertificateException('格式错误：signatureAlgorithm项不是SEQUENCE类型')
 
-        p_3 = bytes.fromhex('30C81C46A35CE411E5FBC1191A0A52EF')
-        # 0b11100001 << 120
-        ek_tw_3 = (mul_gf_2_128(int.from_bytes(ek_tw_2, byteorder='big', signed=False), 1 << 126, False)
-                   .to_bytes(16, byteorder='big', signed=False))
-        print(ek_tw_3.hex())
+        sig_alg_items = asn1_decode(signatureAlgorithm.value_octets)
+        print(sig_alg_items)
 
-        input_3 = xor_on_bytes(p_3, ek_tw_3)
-        print(input_3.hex())  # 数据加密分组密码输入分组
-        output_3 = sm4_encrypt_block(input_3, secret_key=key_1)
-        print(output_3.hex())  # 数据加密分组密码输出分组
-        c_3 = xor_on_bytes(output_3, ek_tw_3)
-        print(c_3.hex())
+        if sig_alg_items[0].tag != TAG_ObjectIdentifier:
+            raise CertificateException('格式错误：algorithm项不是OBJECT IDENTIFIER类型')
+        algorithm: ASN1ObjectIdentifier = sig_alg_items[0]
+        print(algorithm.oid_string,
+              OBJECT_IDENTIFIERS[algorithm.oid_string]
+              if algorithm.oid_string in OBJECT_IDENTIFIERS else 'N/A')
+        parameters = sig_alg_items[1]
 
-        print()
-        tc1 = bytes.fromhex('EA634CBAA69DC60CC54F5E25855CA646')
-        c1 = sm4_decrypt_block(tc1, secret_key=key_1)
-        tc2 = bytes.fromhex('2f3a089f84eed57b1091d6fe70fd4c6e')
-        c2 = sm4_decrypt_block(tc2, secret_key=key_1)
-        print(c1.hex())
-        print(c2.hex())
-        assert c1 == c2
+        # 解析signatureValue域
+        if signatureValue.tag != TAG_BitString:
+            raise CertificateException('格式错误：signatureValue项不是BITSTRING类型')
 
 
-        ti = bytes.fromhex('68129ef66eba455945f0a7c6740527cc')
-        print(sm4_encrypt_block(ti, secret_key=key_1).hex())
+    def test_sm2_opt(self):
+        print(POINT_G * 2)
+        g2x, g2y = jacobian_add(POINT_G.x,  POINT_G.y, POINT_G.x, POINT_G.y)
+        G2 = SM2Point(g2x, g2y)
+        print(G2)
+
+        print(POINT_G * 3)
+        g3x, g3y = jacobian_add(POINT_G.x, POINT_G.y, g2x, g2y)
+        G3 = SM2Point(g3x, g3y)
+        print(G3)
+
+
 
 
 
