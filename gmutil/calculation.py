@@ -77,6 +77,10 @@ def inverse_mod_prime(p: int, n: int) -> Optional[int]:
     return y % p
 
 
+def div_mod_prime(p:int, a: int, b: int) -> int:
+    return (a * inverse_mod_prime(p, b)) % p
+
+
 def _lucas_quick(p, x, y, k):
     """生成Lucas序列的U mod p和V mod p
 
@@ -276,3 +280,61 @@ def mul_gf_2_128_alt(u: int, v: int, big_endian: bool = False):
                 m = m ^ u
             v >>= 1
         return m
+
+
+def jacobian_ecc_point_add(x1: Optional[int], y1: Optional[int], x2: Optional[int], y2: Optional[int],
+                           pm: int, a: int, b: int) -> Union[Tuple[int, int], Tuple[None, None]]:
+    """Jacobian加重射影坐标系上的椭圆曲线点加法。
+
+    见GB/T 32918.1-2016 A.1.2.3.2，GB/T 38635.1-2020。
+    比仿射坐标系下的计算量要小。
+    """
+    assert (x1 is None) == (y1 is None)
+    assert (x2 is None) == (y2 is None)
+
+    if x1 is not None and y1 is not None and x2 is not None and y2 is not None:
+        if x1 == x2:
+            if y1 == y2:  # 倍点
+                l1 = add_mod_prime(pm, muls_mod_prime(pm, x1, x1, 3), a)
+                l2 = muls_mod_prime(pm, x1, y1, y1, 4)
+                l3 = mul_mod_prime(pm, pow_mod_prime(pm, y1, 4), 8)
+                x3_ = minus_mod_prime(pm, mul_mod_prime(pm, l1, l1), muls_mod_prime(pm, l2, 2))
+                y3_ = minus_mod_prime(pm, mul_mod_prime(pm, l1, minus_mod_prime(pm, l2, x3_)), l3)
+                z3_ = mul_mod_prime(pm, 2, y1)
+
+                d = mul_mod_prime(pm, z3_, z3_)
+                x3 = div_mod_prime(pm, x3_, d)
+                d = mul_mod_prime(pm, d, z3_)
+                y3 = div_mod_prime(pm, y3_, d)
+                return x3, y3
+
+            else:  # 逆元素相加
+                assert add_mod_prime(pm, y1, y2) == 0
+                return None, None
+        else:
+            l1 = x1
+            l2 = x2
+            l3 = minus_mod_prime(pm, l1, l2)
+            l4 = y1
+            l5 = y2
+            l6 = minus_mod_prime(pm, l4, l5)
+            l7 = add_mod_prime(pm, l1, l2)
+            l8 = add_mod_prime(pm, l4, l5)
+
+            l3_2 = mul_mod_prime(pm, l3, l3)
+            l3_3 = mul_mod_prime(pm, l3_2, l3)
+            x3_ = minus_mod_prime(pm, mul_mod_prime(pm, l6, l6), mul_mod_prime(pm, l7, l3_2))
+            y3_ = minus_mod_prime(pm, mul_mod_prime(pm, l6, minus_mod_prime(pm, mul_mod_prime(pm, l1, l3_2), x3_)), mul_mod_prime(pm, l4, l3_3))
+            z3_ = l3
+
+            d = mul_mod_prime(pm, z3_, z3_)
+            x3 = div_mod_prime(pm, x3_, d)
+            d = mul_mod_prime(pm, d, z3_)
+            y3 = div_mod_prime(pm, y3_, d)
+            return x3, y3
+
+    if x1 is None:
+        return x2, y2
+
+    if x2 is None:
+        return x1, y1

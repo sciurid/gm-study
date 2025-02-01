@@ -78,7 +78,7 @@ def _i2b(n: int):
     return int.to_bytes(n, length=SM2_P_BYTE_LEN, byteorder="big")
 
 
-def jacobian_add(x1: int, y1: int, x2: int, y2: int) -> Union[Tuple[int, int], Tuple[None, None]]:
+def jacobian_add_sm2_points(x1: int, y1: int, x2: int, y2: int) -> Union[Tuple[int, int], Tuple[None, None]]:
     """GB/T 32918.1-2016 A.1.2.3.2 Jacobian加重射影坐标系上的点加法。
 
     比仿射坐标系下的计算量要小。不处理O+P/P+O的情况。
@@ -88,7 +88,7 @@ def jacobian_add(x1: int, y1: int, x2: int, y2: int) -> Union[Tuple[int, int], T
             l1 = p_add(p_muls(x1, x1, 3), SM2_A)
             l2 = p_muls(x1, y1, y1, 4)
             l3 = p_mul(p_pow(y1, 4), 8)
-            x3_ = p_mul(l1, l1) - p_mul(l2, 2)
+            x3_ = p_minus(p_mul(l1, l1), p_mul(l2, 2))
             y3_ = p_minus(p_mul(l1, p_minus(l2, x3_)), l3)
             z3_ = p_mul(2, y1)
 
@@ -165,7 +165,7 @@ class SM2Point:
             # assert other._y is None
             return self
 
-        x, y = jacobian_add(self._x, self._y, other._x, other._y)
+        x, y = jacobian_add_sm2_points(self._x, self._y, other._x, other._y)
         return SM2Point(x, y)
 
         # if self._x == other._x:

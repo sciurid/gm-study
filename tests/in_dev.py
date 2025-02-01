@@ -51,23 +51,15 @@ class InDevelopmentTestCase(TestCase):
         if signatureValue.tag != TAG_BitString:
             raise CertificateException('格式错误：signatureValue项不是BITSTRING类型')
 
-
     def test_sm2_opt(self):
         print(POINT_G * 2)
-        g2x, g2y = jacobian_add(POINT_G.x,  POINT_G.y, POINT_G.x, POINT_G.y)
+        g2x, g2y = jacobian_ecc_point_add(POINT_G.x, POINT_G.y, POINT_G.x, POINT_G.y, SM2_P, SM2_A, SM2_B)
         G2 = SM2Point(g2x, g2y)
         print(G2)
 
         print(POINT_G * 3)
-        g3x, g3y = jacobian_add(POINT_G.x, POINT_G.y, g2x, g2y)
+        g3x, g3y = jacobian_ecc_point_add(POINT_G.x, POINT_G.y, g2x, g2y, SM2_P, SM2_A, SM2_B)
         G3 = SM2Point(g3x, g3y)
         print(G3)
-
-
-
-
-
-
-
 
 
