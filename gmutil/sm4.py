@@ -147,25 +147,27 @@ def sm4_function(message: Union[bytes, bytearray, memoryview], secret_key: Union
     return _do_sm4_rounds(message, _expand_round_keys(secret_key), encrypt)
 
 
-def sm4_encrypt_block(message: Union[bytes, bytearray, memoryview],
-                      secret_key: Union[bytes, bytearray, memoryview]) -> bytes:
+def sm4_encrypt_block(secret_key: Union[bytes, bytearray, memoryview],
+                      message: Union[bytes, bytearray, memoryview]) -> bytes:
     """SM4加密函数
 
     适用于一次性加密的情况，相同密钥反复使用的情况适合使用SM4类
     GB/T 32907-2016 7.1 加密算法
-    :param message 明文输入
     :param secret_key 加密密钥
+    :param message 明文消息值
+    :return: 密文消息值
     """
     return sm4_function(message, secret_key, True)
 
 
-def sm4_decrypt_block(cipher_text: Union[bytes, bytearray, memoryview],
-                      secret_key: Union[bytes, bytearray, memoryview]) -> bytes:
+def sm4_decrypt_block(secret_key: Union[bytes, bytearray, memoryview],
+                      cipher_text: Union[bytes, bytearray, memoryview]) -> bytes:
     """SM4解密函数
 
     适用于一次性解密的情况，相同密钥反复使用的情况适合使用SM4类
-    :param cipher_text 密文
     :param secret_key 加密密钥
+    :param cipher_text 密文消息值
+    :return: 明文消息值
     """
     return sm4_function(cipher_text, secret_key, False)
 

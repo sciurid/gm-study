@@ -22,16 +22,16 @@ class SM4TestCase(unittest.TestCase):
     def test_sm4_block(self):
         # GB/T 32097-2016 A.1
         message = bytes.fromhex('01234567 89ABCDEF FEDCBA98 76543210')
-        secrets = bytes.fromhex('01234567 89ABCDEF FEDCBA98 76543210')
-        cipher_text = sm4_encrypt_block(message, secrets)
+        secret_key = bytes.fromhex('01234567 89ABCDEF FEDCBA98 76543210')
+        cipher_text = sm4_encrypt_block(secret_key, message)
 
         self.assertEqual(cipher_text, bytes.fromhex('681EDF34 D206965E 86B3E94F 536E4246'))
 
-        restored = sm4_decrypt_block(cipher_text, secrets)
+        restored = sm4_decrypt_block(secret_key, cipher_text)
         self.assertEqual(message, restored)
 
         # GB/T 32097-2016 A.2
-        sm4 = SM4(secrets)
+        sm4 = SM4(secret_key)
         cipher_text = message
         for _ in range(1000000):
             cipher_text = sm4.encrypt_block(cipher_text)

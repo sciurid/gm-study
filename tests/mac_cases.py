@@ -34,6 +34,7 @@ class MACTestCase(TestCase):
 
 
     def test_hmac_sample(self):
+        # GB/T 15852.2-2024 C.2
         buffer = StringIO()
         for i in range(1000000):
             buffer.write('a')
@@ -46,11 +47,8 @@ class MACTestCase(TestCase):
             buffer.getvalue()
         )
 
-
-
         key_1 = bytes.fromhex('00112233445566778899AABBCCDDEEFF')
         key_2 = bytes.fromhex('0123456789ABCDEFFEDCBA9876543210')
-
 
         # 密钥 1 的 MAC 值
         mac_key1 = [

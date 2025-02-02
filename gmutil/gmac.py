@@ -51,10 +51,10 @@ def bytes_to_uint(b: bytes) -> int:
 
 def gmac(key: bytes, message: bytes, n: bytes) -> bytes:
     logger.debug('-' * 20 + 'GMAC' + '-' * 20)
-    key_h = sm4_encrypt_block(b'\x00' * 16, key)
+    key_h = sm4_encrypt_block(key, b'\x00' * 16)
     h = ghash(key_h, message, b'')
     y_0 = (n + b'\x00' * 3 + b'\x01') if len(n) == 12 else ghash(key_h, b'', n)
-    enc_y0 = sm4_encrypt_block(message=y_0, secret_key=key)
+    enc_y0 = sm4_encrypt_block(key, y_0)
     mac = h ^ bytes_to_uint(enc_y0)
     return uint_to_bytes(mac)
 
