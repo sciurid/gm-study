@@ -49,13 +49,13 @@ def hmac_sm3(key: Union[bytes, bytearray, memoryview], message: Union[bytes, byt
     return hmac(sm3_hash, 64, key, message)
 
 
-def uint16_to_bytes(n: int) -> bytes:
-    """16字节无符号整数转化为字节串"""
+def uint128_to_bytes(n: int) -> bytes:
+    """128bit无符号整数转化为字节串"""
     return n.to_bytes(length=16, byteorder='big', signed=False)
 
 
-def bytes_to_uint16(b: bytes) -> int:
-    """字节串转化为16字节无符号整数"""
+def bytes_to_uint128(b: Union[bytes, bytearray, memoryview]) -> int:
+    """字节串转化为128bit无符号整数"""
     assert len(b) <= 16
     return int.from_bytes(b, byteorder='big', signed=False)
 
@@ -71,7 +71,7 @@ def ghash(key_h: Union[bytes, bytearray, memoryview],
     :param z: 任意长度的比特串Z
     """
     assert len(key_h) == 16
-    h = bytes_to_uint16(key_h)
+    h = bytes_to_uint128(key_h)
 
     wm = w if isinstance(w, memoryview) else memoryview(w)
     zm = z if isinstance(z, memoryview) else memoryview(z)
@@ -79,10 +79,15 @@ def ghash(key_h: Union[bytes, bytearray, memoryview],
     def _split_pad(s):
         l = len(s)
         blocks = []
-        for i in range(0, l, 16):
-            blocks.append(int.from_bytes(s[i: i + 16], byteorder='big', signed=False))
-        if l % 16 != 0:
-            blocks.append(int.from_bytes(s[(l % 16) - l:], byteorder='big', signed=False) << (8 * l % 16))
+        m = 0
+        n = 16
+        while n < l:
+            blocks.append(int.from_bytes(s[m:n], byteorder='big', signed=False))
+            m = n
+            n = m + 16
+        if m < l:
+            blocks.append(int.from_bytes(s[m:], byteorder='big', signed=False) << ((n - l) * 8))
+
         return blocks
 
     ws = _split_pad(wm)
@@ -99,6 +104,8 @@ def ghash(key_h: Union[bytes, bytearray, memoryview],
     return x
 
 
+ZEROS_128 = b'\x00' * 16
+
 def gmac(block_cipher_encrypt: Callable[[Union[bytes, bytearray, memoryview], Union[bytes, bytearray, memoryview]], bytes],
          key: Union[bytes, bytearray, memoryview],
          message: Union[bytes, bytearray, memoryview], n: Union[bytes, bytearray, memoryview]) -> bytes:
@@ -110,12 +117,12 @@ def gmac(block_cipher_encrypt: Callable[[Union[bytes, bytearray, memoryview], Un
     :param message: 要生成验证码的消息值
     :param n: 发送方和接收方约定的临时值
     """
-    key_h = block_cipher_encrypt(b'\x00' * 16, key)
+    key_h = block_cipher_encrypt(key, ZEROS_128)
     h = ghash(key_h, message, b'')
     y_0 = (n + b'\x00' * 3 + b'\x01') if len(n) == 12 else ghash(key_h, b'', n)
-    enc_y0 = block_cipher_encrypt(y_0, key)
-    mac = h ^ bytes_to_uint16(enc_y0)
-    return uint16_to_bytes(mac)
+    enc_y0 = block_cipher_encrypt(key, y_0)
+    mac = h ^ bytes_to_uint128(enc_y0)
+    return uint128_to_bytes(mac)
 
 
 def gmac_sm4(key: Union[bytes, bytearray, memoryview],

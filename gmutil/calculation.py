@@ -338,3 +338,17 @@ def jacobian_ecc_point_add(x1: Optional[int], y1: Optional[int], x2: Optional[in
 
     if x2 is None:
         return x1, y1
+
+
+def uint_incr(ctr: Union[bytearray, memoryview]):
+    """字节形式的无符号整数递增函数，采用就地(in-place)递增的方式
+
+    :param ctr: 表示无符号整数的字节串，函数执行后表示的无符号整数加一，如果溢出则得零
+    """
+    lb = -len(ctr) - 1
+    for i in range(-1, lb, -1):
+        if ctr[i] != 0xff:
+            ctr[i] += 1
+            break
+        else:
+            ctr[i] = 0

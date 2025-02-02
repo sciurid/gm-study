@@ -1,4 +1,6 @@
 from typing import Callable, Union, Optional, Tuple
+
+from . import uint_incr
 from .calculation import xor_on_bytes, mul_gf_2_128
 from .commons import Codec, BlockCipherAlgorithm
 from abc import ABC, abstractmethod
@@ -172,7 +174,7 @@ class CTR(Mode):
         """
         def __init__(self, mode: 'CTR'):
             super().__init__(mode)
-            self._last_counter = mode._iv
+            self._last_counter = bytearray(mode._iv)
             self._block_byte_len = mode._block_byte_len
             self._algorithm = mode._algorithm
             self._overflow = 1 << mode._algorithm.block_size
@@ -185,10 +187,11 @@ class CTR(Mode):
                 out_block = xor_on_bytes(in_block, memoryview(mask)[0:len(in_block)])
 
             # 计数器加一并按分组长度循环
-            next_counter = int.from_bytes(self._last_counter, byteorder='big', signed=False) + 1
-            if next_counter == self._overflow:
-                next_counter = 0
-            self._last_counter = next_counter.to_bytes(length=self._block_byte_len, byteorder='big', signed=False)
+            # next_counter = int.from_bytes(self._last_counter, byteorder='big', signed=False) + 1
+            # if next_counter == self._overflow:
+            #     next_counter = 0
+            # self._last_counter = next_counter.to_bytes(length=self._block_byte_len, byteorder='big', signed=False)
+            uint_incr(self._last_counter)
 
             return out_block
 
