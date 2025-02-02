@@ -72,7 +72,7 @@ def _sm3_p1(x: int):
 
 def _sm3_pad(m: Union[bytes, bytearray]) -> bytes:
     """GB/T 32905-2016 5.2 填充"""
-    if isinstance(m, bytes):
+    if isinstance(m, bytes) or isinstance(m, memoryview):
         buffer = bytearray(m)
     elif isinstance(m, bytearray):
         buffer = m
@@ -137,7 +137,7 @@ def _sm3_cf(v_i: tuple, b_i: memoryview) -> tuple:
     return tuple(v ^ n for v, n in zip(v_i, (a, b, c, d, e, f, g, h)))
 
 
-def sm3_hash(message: Union[bytes, bytearray]) -> bytes:
+def sm3_hash(message: Union[bytes, bytearray, memoryview]) -> bytes:
     padded = memoryview(_sm3_pad(message))
     v_0 = _SM3_IV
     v_n = None
@@ -151,7 +151,11 @@ def sm3_hash(message: Union[bytes, bytearray]) -> bytes:
     return bytes(buffer)
 
 
-def sm3_kdf(data: Union[bytes, bytearray], m_len: int):
+SM3_BLOCK_BYTE_LENGTH = 64
+SM3_OUTPUT_BYTE_LENGTH = 32
+
+
+def sm3_kdf(data: Union[bytes, bytearray, memoryview], m_len: int):
     """SM3密钥派生函数
     GB/T 32918.4-2016 6.4.3 (P3)
     data: 比特串
