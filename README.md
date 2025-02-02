@@ -245,7 +245,29 @@ ref = bytes.fromhex('1e ea eb 66 9e 96 bd 05 9b d9 92 91 23 03 0e 78')
 self.assertEqual(ref, mine)
 ```
 
+#### SM4-GCM
+
+```
+key = bytes.fromhex("0123456789ABCDEFFEDCBA9876543210")
+p = bytes.fromhex("AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCDDDDDDDDDDDDDDDD"
+                  "EEEEEEEEEEEEEEEEFFFFFFFFFFFFFFFFEEEEEEEEEEEEEEEEAAAAAAAAAAAAAAAA")
+iv = bytes.fromhex("00001234567800000000ABCD")
+aad = bytes.fromhex("FEEDFACEDEADBEEFFEEDFACEDEADBEEFABADDAD2")
+
+c, t = gcm_encrypt(sm4_encrypt_block, key, p, iv, aad)
+self.assertEqual(c, bytes.fromhex("17F399F08C67D5EE19D0DC9969C4BB7D5FD46FD3756489069157B282BB200735
+                                  "D82710CA5C22F0CCFA7CBF93D496AC15A56834CBCF98C397B4024A2691233B8D"))
+self.assertEqual(t, bytes.fromhex("83DE3541E4C2B58177E065A9BF7B62EC"))
+print(c.hex(), t.hex())
+
+r = gcm_decrypt(sm4_encrypt_block, key, iv, aad, c, t)
+self.assertEqual(r, p)
+
+```
+
+
+
 ## 待开发
 
-- SM2私钥和公钥的保存格式
+- SM2私钥和公钥的保存格式（数字证书格式）
 - SM4加密的HCTR工作方式
