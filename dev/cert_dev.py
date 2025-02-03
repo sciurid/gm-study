@@ -10,7 +10,7 @@ class CertificateTestCase(TestCase):
             cert_file = abspath(join(__file__, pardir, 'x509samples', filename))
             print(filename + " " + "=" * 30)
             with open(cert_file, 'rb') as cf:
-                certificate = Certificate.load_der(cf)
+                certificate = Certificate.load_certificate(cf)
 
             print(certificate.version)
             print(certificate.serial_number)
@@ -31,7 +31,7 @@ class CertificateTestCase(TestCase):
     def test_signature(self):
         cert_file = abspath(join(__file__, pardir, 'x509samples', 'sm2.rca.der'))
         with open(cert_file, 'rb') as cf:
-            root_ca = Certificate.load_der(cf)
+            root_ca = Certificate.load_certificate(cf)
 
         pub_key = SM2PublicKey(SM2Point.from_bytes(root_ca.subject_public_key_info[1].value[0]))
 
@@ -43,7 +43,7 @@ class CertificateTestCase(TestCase):
 
         cert_file = abspath(join(__file__, pardir, 'x509samples', 'sm2.oca.der'))
         with open(cert_file, 'rb') as cf:
-            middle_ca = Certificate.load_der(cf)
+            middle_ca = Certificate.load_certificate(cf)
 
         sig_seq = asn1_decode(middle_ca.signature_value[0])[0]
         r = sig_seq.value[0].value.to_bytes(length=32, byteorder='big', signed=False)

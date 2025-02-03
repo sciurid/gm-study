@@ -23,7 +23,7 @@ def load_cn_root_ca_certs():
         if filename.endswith('.cer'):
             with open(join(root_ca_dir, filename), 'r') as f:
                 der_data = base64.b64decode(f.read())
-                ca_cert = Certificate.load_der(der_data)
+                ca_cert = Certificate.load_certificate(der_data)
                 print(ca_cert.serial_number)
                 print(ca_cert.subject)
             root_cas.append(ca_cert)
@@ -68,7 +68,7 @@ certs = load_pem(cert_file)
 
 parent = None
 for cert_data in reversed(certs):
-    cert = Certificate.load_der(cert_data[1])
+    cert = Certificate.load_certificate(cert_data[1])
     if parent is None:  # Root
         print('-' * 20)
         print(cert.serial_number)
@@ -82,6 +82,8 @@ for cert_data in reversed(certs):
             verified = pub_key.verify(cert.tbs_certificate, r + s)
             if not verified:
                 raise CertificateException()
+
+            print('验证通过')
             parent = cert
         else:
             raise CertificateException()
@@ -90,6 +92,9 @@ for cert_data in reversed(certs):
         print(cert.serial_number)
         print(cert.subject, cert.subject_unique_id)
         print(cert.issuer, cert.issuer_unique_id)
+        print(cert.authority_key_identifier)
+        for ext_item in cert.extensions:
+            print(ext_item[0], ext_item[1], ext_item[2].hex())
         if cert.subject_public_key_info[0] == 'SM2':
             issuer_pub_key = SM2PublicKey.from_bytes(parent.subject_public_key_info[1])
             sig_seq = ASN1Sequence.from_bytes(cert.signature_value)
@@ -98,6 +103,7 @@ for cert_data in reversed(certs):
             verified = issuer_pub_key.verify(cert.tbs_certificate, r + s)
             if not verified:
                 raise CertificateException()
+            print('验证通过')
             parent = cert
         else:
             raise CertificateException()
