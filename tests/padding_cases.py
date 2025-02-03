@@ -5,10 +5,7 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 
 
-class GBTCheck(TestCase):
-
-
-
+class PaddingCases(TestCase):
     def test_padding(self):
         sample_0 = b''
         sample_1 = bytes.fromhex('00112233445566778899')

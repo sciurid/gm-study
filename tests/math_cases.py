@@ -15,7 +15,7 @@ def primes(n):
     return out
 
 
-class FundamentalTests(TestCase):
+class MathTests(TestCase):
     def test_pow_mod(self):
         n = 127
         for k in range(1000):
