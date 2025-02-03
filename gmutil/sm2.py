@@ -261,7 +261,7 @@ class SM2Point:
             raise ValueError('格式类型{}不支持，应当为：uncompressed/compressed/hybrid'.format(fmt))
 
     @staticmethod
-    def from_bytes(octets: bytes) -> 'SM2Point':
+    def from_bytes(octets: Union[bytes, bytearray, memoryview]) -> 'SM2Point':
         """从字节串表示中恢复SM2点
         GB/T 32918.1-2016 4.2.10
         """
@@ -382,6 +382,10 @@ class SM2PublicKey:
     @property
     def octets(self) -> bytes:
         return SM2Point.repr_uncompressed(self._point)
+
+    @staticmethod
+    def from_bytes(octets: Union[bytes, bytearray, memoryview]):
+        return SM2PublicKey(SM2Point.from_bytes(octets))
 
     def generate_z(self, uid: bytes = DEFAULT_USER_ID) -> bytes:
         """根据本公钥计算出头部值

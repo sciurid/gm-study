@@ -38,5 +38,24 @@
         ],
         "name": "commonName",
         "other_name": "cn"
+    },
+    "2.5.4.8": {
+        "path": [
+            "joint-iso-itu-t(2)",
+            "ds(5)",
+            "attributeType(4)",
+            "stateOrProvinceName(8)"
+        ],
+        "name": "stateOrProvinceName",
+        "other_name": "st"
+    },
+    "2.5.4.7": {
+        "path": [
+            "joint-iso-itu-t(2)",
+            "ds(5)",
+            "attributeType(4)",
+            "localityName(7)"
+        ],
+        "name": "localityName"
     }
 }
