@@ -1,6 +1,5 @@
-from typing import Callable, Union, Optional, Tuple
+from typing import Union, Optional, Tuple
 
-from . import uint_incr
 from .calculation import xor_on_bytes, mul_gf_2_128
 from .commons import Codec, BlockCipherAlgorithm
 from abc import ABC, abstractmethod
@@ -10,27 +9,16 @@ logger = logging.getLogger(__name__)
 
 
 class Mode(ABC):
-    def __init__(self, algorithm: Optional[BlockCipherAlgorithm] = None):
-        self._algorithm = None
-        self._block_size = None
-        self._block_byte_len = None
-        if algorithm is not None:
-            self.set_algorithm(algorithm)
-
-    @property
-    def block_byte_len(self):
-        return self._block_byte_len
-
-    def set_algorithm(self, algorithm: BlockCipherAlgorithm):
-        """设置要使用的分组密码算法
-
-        :param algorithm: BlockCipherAlgorithm 分组密码算法
-        """
+    def __init__(self, algorithm: BlockCipherAlgorithm):
         self._algorithm = algorithm
         self._block_size = self._algorithm.block_size
         if self._block_size % 8 != 0:
             raise ValueError('分组大小必须为8的倍数/Block size should be a multiple of 8')
         self._block_byte_len = self._block_size // 8
+
+    @property
+    def block_byte_len(self):
+        return self._block_byte_len
 
     @abstractmethod
     def encryptor(self) -> Codec:
@@ -84,7 +72,7 @@ class BlockwiseInnerCodec(Codec, ABC):
 
 class ECB(Mode):
     """电码本（ECB）模式，规定于GB/T 17964-2021 5"""
-    def __init__(self, algorithm: Optional[BlockCipherAlgorithm] = None):
+    def __init__(self, algorithm: BlockCipherAlgorithm):
         """初始化函数
 
         :param algorithm: 分组密码算法
@@ -114,20 +102,17 @@ class ECB(Mode):
 
 class CBC(Mode):
     """密文分组链接（CBC）模式，规定于GB/T 17964-2021 7"""
-    def __init__(self, iv: Union[bytes, bytearray, memoryview], algorithm: Optional[BlockCipherAlgorithm] = None):
+    def __init__(self, algorithm: BlockCipherAlgorithm, iv: Union[bytes, bytearray, memoryview]):
         """初始化函数
 
         :param iv: 初始向量IV，由加解密双方约定或者由加密方提供给解密方
         :param algorithm: 分组密码算法
         """
-        self._iv = iv
         super().__init__(algorithm)
-        self._last_cipher_block = iv
-
-    def set_algorithm(self, algorithm: BlockCipherAlgorithm):
+        self._iv = iv
         if len(self._iv) * 8 != algorithm.block_size:
             raise ValueError('初始向量IV必须为分组长度/Initial vector should be of block size.')
-        super().set_algorithm(algorithm)
+        self._last_cipher_block = iv
 
     class Encryptor(BlockwiseInnerCodec):
 
@@ -160,14 +145,12 @@ class CBC(Mode):
 
 class CTR(Mode):
     """计数器（CTR）模式，规定于GB/T 17964-2021 9"""
-    def __init__(self, iv: Union[bytes, bytearray, memoryview], algorithm: Optional[BlockCipherAlgorithm] = None):
-        self._iv = iv
+    def __init__(self, iv: Union[bytes, bytearray, memoryview], algorithm: BlockCipherAlgorithm):
         super().__init__(algorithm)
-
-    def set_algorithm(self, algorithm: BlockCipherAlgorithm):
+        self._iv = iv
         if len(self._iv) * 8 != algorithm.block_size:
             raise ValueError('初始向量IV必须为分组长度/Initial vector should be of block size.')
-        super().set_algorithm(algorithm)
+
 
     class InnerCodec(BlockwiseInnerCodec):
         """CTR模式的加密解密是相同算法
@@ -214,7 +197,7 @@ class CFB(Mode):
     国标中设初始向量IV长度(r) >= 分组加密算法的分组长度(n) >= 反馈密文长度(k) >= 模式分组长度(j)，
     实际应用中通常是r = n > k = j，尚不明确为何采取此种规范。
     """
-    def __init__(self, iv: Union[bytes, bytearray, memoryview], algorithm: Optional[BlockCipherAlgorithm] = None,
+    def __init__(self, iv: Union[bytes, bytearray, memoryview], algorithm: BlockCipherAlgorithm,
                  stream_unit_byte_len: Optional[int] = None, feedback_byte_len: Optional[int] = None):
         """初始化函数
 
@@ -223,9 +206,9 @@ class CFB(Mode):
         :param stream_unit_byte_len: CFB模式的分组长度（国标中的j//8），不超过底层的分组密码算法的长度
         :param feedback_byte_len: 反馈变量长度（国标中的k//8），不小于模式的分组长度，不超过底层分组密码算法的分组长度，通常取模式的分组长度
         """
+        super().__init__(algorithm)
         self._iv = iv
         self._iv_byte_len = len(self._iv)
-        super().__init__(algorithm)
         self._stream_unit_byte_len = stream_unit_byte_len if stream_unit_byte_len else self._block_byte_len
         self._feedback_byte_len = feedback_byte_len if feedback_byte_len else self._stream_unit_byte_len
 
@@ -320,13 +303,11 @@ class CFB(Mode):
 
 class OFB(Mode):
     """输出反馈（OFB）模式，规定于GB/T 17964-2021 8"""
-    def __init__(self, iv: Union[bytes, bytearray, memoryview], algorithm: Optional[BlockCipherAlgorithm] = None,
+    def __init__(self, iv: Union[bytes, bytearray, memoryview], algorithm: BlockCipherAlgorithm,
                  stream_unit_byte_len: Optional[int] = None):
         super().__init__(algorithm)
         self._iv = iv
-        self.set_algorithm(algorithm)
         self._stream_unit_byte_len = stream_unit_byte_len if stream_unit_byte_len else self._block_byte_len
-        self._iv = iv
 
     class InnerCodec(Codec):
         def __init__(self, mode: 'OFB'):
@@ -374,19 +355,13 @@ class OFB(Mode):
 
 
 class XTS(Mode):
-    def __init__(self, algorithm: BlockCipherAlgorithm = None):
+    def __init__(self, algorithm: BlockCipherAlgorithm, tweak: Union[bytes, bytearray, memoryview],
+                 tweak_algorithm: BlockCipherAlgorithm):
         super().__init__(algorithm)
-        self._step_mask = None
-
-        self._buffer = bytearray()
-
-    def set_algorithm(self, algorithm: BlockCipherAlgorithm):
-        super().set_algorithm(algorithm)
         if self._block_size != 128:
             raise ValueError("XTS模式目前只支持128-bit的分组长度/Only 128-bit block algorithm is supported by XTS mode.")
-
-    def set_tweak(self, tweak: Union[bytes, bytearray, memoryview], tweak_algorithm: BlockCipherAlgorithm):
         self._step_mask = tweak_algorithm.encrypt_block(tweak)  # 初始掩码由调柄（tweak）值进行分组加密计算获得
+        self._buffer = bytearray()
 
     POLYNOMIAL_ALPHA: int = 1 << 126
 
@@ -498,6 +473,143 @@ class XTS(Mode):
         return XTS.Decryptor(self)
 
 
+from . import BlockCipherAlgorithm, Codec
+from .mac import uint128_to_bytes, bytes_to_uint128, ZEROS_128, ghash
+from .calculation import uint_incr
+from .mode import Mode, BlockwiseInnerCodec
+from typing import Tuple, Optional, Union
+
+BLOCK_BYTE_LEN = 16
+
+def _gctr_block(block_cipher, cb, block_in):
+    ek_cb = block_cipher(cb)
+    block_out = uint128_to_bytes(bytes_to_uint128(ek_cb) ^ bytes_to_uint128(block_in))
+    uint_incr(cb)
+    return block_out
+
+def _gctr_final(block_cipher, cb, block_in):
+    remaining_len = len(block_in)
+    padding = BLOCK_BYTE_LEN - remaining_len
+    ek_cb = block_cipher(cb)
+    if padding == 0:
+        return uint128_to_bytes(bytes_to_uint128(ek_cb) ^ bytes_to_uint128(block_in))
+    else:
+        last = bytearray(block_in)
+        last.extend(b'\x00' * padding)
+        return uint128_to_bytes(bytes_to_uint128(ek_cb) ^ bytes_to_uint128(last))[0:remaining_len]
+
+def _gctr(block_cipher, icb, message) -> bytes:
+    lm = len(message)
+    if lm == 0:
+        return b''
+    n = ((lm - 1) // BLOCK_BYTE_LEN) + 1
+
+    message = message if isinstance(message, memoryview) else memoryview(message)
+
+    cb = bytearray(icb)
+    begin = 0
+    end = BLOCK_BYTE_LEN
+    buffer = bytearray()
+    for _ in range(n - 1):
+        block = _gctr_block(block_cipher, cb, message[begin:end])
+        buffer.extend(block)
+        begin = end
+        end = begin + BLOCK_BYTE_LEN
+
+    buffer.extend(_gctr_final(block_cipher, cb, message[begin:]))
+    return bytes(buffer)
+
+
+def _gcm_init(block_cipher, iv) -> Tuple[bytes, bytes, bytearray]:
+    key_h = block_cipher(ZEROS_128)
+    if len(iv) == 12:
+        j0 = iv + b'\x00\x00\x00\x01'
+    else:
+        j0 = uint128_to_bytes(ghash(key_h=key_h, w=b'', z=iv))
+    icb = bytearray(j0)
+    uint_incr(icb)
+    return key_h, j0, icb
+
+
+def gcm_encrypt(block_cipher, message, iv, auth_data) -> Tuple[bytes, bytes]:
+    key_h, j0, icb = _gcm_init(block_cipher, iv)
+    c = _gctr(block_cipher, icb, message)
+    s = uint128_to_bytes(ghash(key_h, b'' if auth_data is None else auth_data, c))
+    t = _gctr(block_cipher, j0, s)
+    return c, t
+
+
+def gcm_decrypt(block_cipher, iv, auth_data, cipher_text, auth_tag) -> Optional[bytes]:
+    key_h, j0, icb = _gcm_init(block_cipher, iv)
+    p = _gctr(block_cipher, icb, cipher_text)
+    s = uint128_to_bytes(ghash(key_h, b'' if auth_data is None else auth_data, cipher_text))
+    t = _gctr(block_cipher, j0, s)
+    if auth_tag == t:
+        return p
+    else:
+        return None
+
+
+class GCM(Mode):
+    def __init__(self, algorithm: BlockCipherAlgorithm, iv: Union[bytes, bytearray, memoryview],
+                 aad: Union[bytes, bytearray, memoryview]):
+        super().__init__(algorithm)
+        self._iv = iv
+        self._aad = aad
+
+    class Encryptor(BlockwiseInnerCodec):
+        def __init__(self, mode: 'GCM'):
+            super().__init__(mode)
+            self._cipher = mode._algorithm.encrypt_block
+            self._iv = mode._iv
+            self._aad = mode._aad if mode._aad else b''
+            self._key_h, self._j0, self._cb = _gcm_init(self._cipher, self._iv)
+            self._cipher_text = bytearray()
+
+        def _process_block(self, in_block: Union[bytes, bytearray, memoryview]) -> bytes:
+            cipher_block = _gctr_block(self._cipher, self._cb, in_block)
+            self._cipher_text.extend(cipher_block)
+            return cipher_block
+
+        def finalize(self) -> bytes:
+            res = bytearray()
+            cipher_block = _gctr_final(self._cipher, self._cb, self._buffer)
+            res.extend(cipher_block)
+
+            self._cipher_text.extend(cipher_block)
+            s = uint128_to_bytes(ghash(self._key_h, self._aad, self._cipher_text))
+            t = _gctr(self._cipher, self._j0, s)
+            res.extend(t)
+            return bytes(res)
+
+    class Decryptor(BlockwiseInnerCodec):
+        def __init__(self, mode: 'GCM'):
+            super().__init__(mode)
+            self._cipher = mode._algorithm.encrypt_block
+            self._iv = mode._iv
+            self._aad = mode._aad
+            self._key_h, self._j0, self._cb = _gcm_init(self._cipher, self._iv)
+            self._cipher_tag_text = bytearray()
+
+        def _process_block(self, in_block: Union[bytes, bytearray, memoryview]) -> bytes:
+            raise NotImplementedError()
+
+        def update(self, octets: Union[bytes, bytearray, memoryview]) -> bytes:
+            self._cipher_tag_text.extend(octets)
+            return b''
+
+        def finalize(self) -> bytes:
+            t = memoryview(self._cipher_tag_text)[-BLOCK_BYTE_LEN:]
+            c = memoryview(self._cipher_tag_text)[0:-BLOCK_BYTE_LEN]
+            return gcm_decrypt(self._cipher, self._iv, self._aad, c, t)
+
+    def encryptor(self) -> Codec:
+        return GCM.Encryptor(self)
+
+    def decryptor(self) -> Codec:
+        return GCM.Decryptor(self)
+
+
 def get_mode(mode_name: str, algorithm: BlockCipherAlgorithm, **kwargs):
     mode_name = mode_name.upper()
     if mode_name == 'ECB':
@@ -519,9 +631,11 @@ def get_mode(mode_name: str, algorithm: BlockCipherAlgorithm, **kwargs):
     elif mode_name == 'CTR':
         return CTR(iv=kwargs['iv'], algorithm=algorithm)
     elif mode_name == 'XTS':
-        xts = XTS(algorithm=algorithm)
-        xts.set_tweak(kwargs['tweak'], kwargs['tweak_algorithm'])
+        xts = XTS(algorithm=algorithm, tweak=kwargs['tweak'], tweak_algorithm=kwargs['tweak_algorithm'])
         return xts
+    elif mode_name == 'GCM':
+        gcm = GCM(algorithm=algorithm, iv=kwargs['iv'], aad=kwargs['aad'] if 'aad' in kwargs else None)
+        return gcm
     else:
         raise ValueError()
 

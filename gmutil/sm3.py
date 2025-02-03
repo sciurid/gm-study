@@ -1,4 +1,5 @@
 from typing import Union, Tuple, Sequence
+from .mac import hmac
 
 # GB/T 32905-2016 4.1 初始值
 _SM3_IV = (0x7380166f, 0x4914b2b9, 0x172442d7, 0xda8a0600, 0xa96f30bc, 0x163138aa, 0xe38dee4d, 0xb0fb0e4e)
@@ -171,3 +172,6 @@ def sm3_kdf(data: Union[bytes, bytearray, memoryview], m_len: int):
         res.extend(sm3_hash(buffer))
 
     return bytes(res[0:m_len])
+
+def sm3_hmac(key: Union[bytes, bytearray, memoryview], message: Union[bytes, bytearray, memoryview]):
+    return hmac(sm3_hash, 64, key, message)

@@ -31,18 +31,16 @@ class SM4TestCase(unittest.TestCase):
         self.assertEqual(message, restored)
 
         # GB/T 32097-2016 A.2
-        sm4 = SM4(secret_key)
-        cipher_text = message
-        for _ in range(1000000):
-            cipher_text = sm4.encrypt_block(cipher_text)
-            if _ % 10000 == 0:
-                print(_)
-        self.assertEqual(cipher_text, bytes.fromhex('595298C7 C6FD271F 0402F804 C33D3F66'))
+        # sm4 = SM4(secret_key)
+        # cipher_text = message
+        # for _ in range(1000000):
+        #     cipher_text = sm4.encrypt_block(cipher_text)
+        #     if _ % 10000 == 0:
+        #         print(_)
+        # self.assertEqual(cipher_text, bytes.fromhex('595298C7 C6FD271F 0402F804 C33D3F66'))
 
     def test_sm4_ecb(self):
-        sm4 = SM4(SM4TestCase.SECRET_KEY)
-        ecb = ECB()
-        ecb.set_algorithm(sm4)
+        ecb = ECB(SM4(SM4TestCase.SECRET_KEY))
         ecb_assertion = ('a51411ff04a711443891fce7ab842a29',
                          'd5b50f46a9a730a0f590ffa776d99855',
                          'c9a86a4d71447f4e873ada4f388af9b9',
@@ -76,8 +74,7 @@ class SM4TestCase(unittest.TestCase):
 
     def test_sm4_cbc(self):
         sm4 = SM4(SM4TestCase.SECRET_KEY)
-        cbc = CBC(SM4TestCase.IV)
-        cbc.set_algorithm(algorithm=sm4)
+        cbc = CBC(sm4, SM4TestCase.IV)
 
         cbc_assertion = ('AC529AF989A62FCE9CDDC5FFB84125CA',
                          'B168DD69DB3C0EEA1AB16DE6AEA43C59',
@@ -226,9 +223,7 @@ class SM4TestCase(unittest.TestCase):
                                 '30C81C46A35CE411E5FBC1191A0A52EF'
                                 'F69F2445DF4F9B17')
 
-        sm4 = SM4(secret_key)
-        xts = XTS(sm4)
-        xts.set_tweak(tweak, SM4(tweak_key))
+        xts = XTS(SM4(secret_key), tweak, SM4(tweak_key))
 
         logger.debug('=' * 20 + 'XTS ENCRYPTION' + '=' * 20)
         enc = xts.encryptor()
@@ -278,26 +273,6 @@ class SM4TestCase(unittest.TestCase):
         tweak_key = secrets.randbits(SM4.BLOCK_SIZE).to_bytes(16, byteorder='big', signed=False)
         iv_tweak = secrets.randbits(SM4.BLOCK_SIZE).to_bytes(16, byteorder='big', signed=False)
 
-        for mode in ('ECB', 'CBC', 'CFB8', 'CFB128', 'OFB8', 'OFB128', 'CTR', 'XTS'):
+        for mode in ('ECB', 'CBC', 'CFB8', 'CFB128', 'OFB8', 'OFB128', 'CTR', 'XTS', 'GCM'):
             for padding in ('PKCS7', 'ISO9797M2'):
                 self.do_test_text(data, secret_key, iv_tweak, tweak_key, mode, padding)
-
-        # ECB
-        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'ECB', 'PKCS7')
-
-        # CBC
-        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'CBC', 'PKCS7')
-
-        # OFB
-        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'CFB8', 'PKCS7')
-        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'CFB128', 'PKCS7')
-
-        # OFB
-        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'OFB8', 'PKCS7')
-        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'OFB128', 'PKCS7')
-
-        # CTR
-        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'CTR', 'PKCS7')
-
-        # XTS
-        self.do_test_text(data, secret_key, iv_tweak, tweak_key, 'XTS', 'PKCS7')

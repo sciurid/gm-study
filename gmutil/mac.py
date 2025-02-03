@@ -1,7 +1,5 @@
 from typing import Callable, Union
 from .calculation import mul_gf_2_128
-from .sm3 import sm3_hash
-from .sm4 import sm4_encrypt_block
 
 IPAD_512 = int.from_bytes(b'\x36' * 64, byteorder='big', signed=False)
 OPAD_512 = int.from_bytes(b'\x5C' * 64, byteorder='big', signed=False)
@@ -45,8 +43,7 @@ def hmac(hash_function: Callable[[Union[bytes, bytearray, memoryview]], bytes], 
     return hash_function(buffer)
 
 
-def hmac_sm3(key: Union[bytes, bytearray, memoryview], message: Union[bytes, bytearray, memoryview]):
-    return hmac(sm3_hash, 64, key, message)
+
 
 
 def uint128_to_bytes(n: int) -> bytes:
@@ -106,6 +103,7 @@ def ghash(key_h: Union[bytes, bytearray, memoryview],
 
 ZEROS_128 = b'\x00' * 16
 
+
 def gmac(block_cipher_encrypt: Callable[[Union[bytes, bytearray, memoryview], Union[bytes, bytearray, memoryview]], bytes],
          key: Union[bytes, bytearray, memoryview],
          message: Union[bytes, bytearray, memoryview], n: Union[bytes, bytearray, memoryview]) -> bytes:
@@ -124,7 +122,3 @@ def gmac(block_cipher_encrypt: Callable[[Union[bytes, bytearray, memoryview], Un
     mac = h ^ bytes_to_uint128(enc_y0)
     return uint128_to_bytes(mac)
 
-
-def gmac_sm4(key: Union[bytes, bytearray, memoryview],
-         message: Union[bytes, bytearray, memoryview], n: Union[bytes, bytearray, memoryview]) -> bytes:
-    return gmac(sm4_encrypt_block, key, message, n)

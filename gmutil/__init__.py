@@ -4,5 +4,4 @@ from .sm3 import *
 from .sm4 import *
 from .mac import *
 from .mode import *
-from .gcm import *
 from .padding import *

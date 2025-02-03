@@ -1,4 +1,4 @@
-from gmutil import gmac_sm4, sm3_hash, hmac_sm3
+from gmutil import sm4_gmac, sm3_hash, sm3_hmac
 from unittest import TestCase
 from io import StringIO
 
@@ -9,11 +9,11 @@ class MACTestCase(TestCase):
     《信息技术 安全技术 消息鉴别码 第3部分：采用泛杂凑函数的机制》（GB/T 15852.3-2019） 附录A
     """
     def test_gmac_sample(self):
-        mine = gmac_sm4(key=b'\x00' * 16, message=b'', n=b'\x00' * 12)
+        mine = sm4_gmac(key=b'\x00' * 16, message=b'', n=b'\x00' * 12)
         ref = bytes.fromhex('23 2f 0c fe 30 8b 49 ea 6f c8 82 29 b5 dc 85 8d')
         self.assertEqual(mine, ref)
 
-        mine = gmac_sm4(
+        mine = sm4_gmac(
             key=bytes.fromhex('fe ff e9 92 86 65 73 1c 6d 6a 8f 94 67 30 83 08'),
             message=bytes.fromhex('fe ed fa ce de ad be ef fe ed fa ce de ad be ef'),
             n=bytes.fromhex('ca fe ba be fa ce db ad de ca f8 88')
@@ -22,7 +22,7 @@ class MACTestCase(TestCase):
         ref = bytes.fromhex('9d 63 25 70 f9 30 64 26 4a 20 91 8e 30 81 b4 cd')
         self.assertEqual(ref, mine)
 
-        mine = gmac_sm4(
+        mine = sm4_gmac(
             key=bytes.fromhex('fe ff e9 92 86 65 73 1c 6d 6a 8f 94 67 30 83 08'),
             message=bytes.fromhex('fe ed fa ce de ad be ef fe ed fa ce de ad be ef'
                                   'ab ad da d2 42 83 1e c2 21 77 74 24 4b 72 21 b7'),
@@ -79,8 +79,8 @@ class MACTestCase(TestCase):
 
         for ind, message in enumerate(messages):
             # print(message)
-            hk1 = hmac_sm3(key_1, message.encode())
-            hk2 = hmac_sm3(key_2, message.encode())
+            hk1 = sm3_hmac(key_1, message.encode())
+            hk2 = sm3_hmac(key_2, message.encode())
             # print(xor_on_bytes(hk1, bytes.fromhex(mac_key1[ind])).hex())
             self.assertEqual(hk1.hex(), mac_key1[ind].lower())
             self.assertEqual(hk2.hex(), mac_key2[ind].lower())

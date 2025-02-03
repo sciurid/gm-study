@@ -5,6 +5,7 @@ import logging
 
 from .padding import *
 from .mode import *
+from .mac import gmac
 
 logger = logging.getLogger(__name__)
 
@@ -241,4 +242,6 @@ class SM4Decryptor(Codec):
         else:
             return bytes(decrypted)
 
-
+def sm4_gmac(key: Union[bytes, bytearray, memoryview],
+             message: Union[bytes, bytearray, memoryview], n: Union[bytes, bytearray, memoryview]) -> bytes:
+    return gmac(sm4_encrypt_block, key, message, n)
