@@ -1,0 +1,42 @@
+{
+    "2.5.4.6": {
+        "path": [
+            "joint-iso-itu-t(2)",
+            "ds(5)",
+            "attributeType(4)",
+            "countryName(6)"
+        ],
+        "name": "countryName",
+        "other_name": "c"
+    },
+    "2.5.4.10": {
+        "path": [
+            "joint-iso-itu-t(2)",
+            "ds(5)",
+            "attributeType(4)",
+            "organizationName(10)"
+        ],
+        "name": "organizationName",
+        "other_name": "o"
+    },
+    "2.5.4.11": {
+        "path": [
+            "joint-iso-itu-t(2)",
+            "ds(5)",
+            "attributeType(4)",
+            "organizationalUnitName(11)"
+        ],
+        "name": "organizationalUnitName",
+        "other_name": "ou"
+    },
+    "2.5.4.3": {
+        "path": [
+            "joint-iso-itu-t(2)",
+            "ds(5)",
+            "attributeType(4)",
+            "commonName(3)"
+        ],
+        "name": "commonName",
+        "other_name": "cn"
+    }
+}
