@@ -1,3 +1,4 @@
+import itertools
 from typing import Optional, Sequence, Literal, cast
 from asn1util import *
 import os
@@ -317,11 +318,11 @@ class Certificate:
                 aki_item[1])
 
     @property
-    def subject_key_identifier(self):
+    def subject_key_identifier(self) -> Tuple[Optional[bytes], bool]:
         """主体密钥标识符 SubjectKeyIdentifier"""
         ski_item = self.get_extension(OID_SUBJECT_KEY_IDENTIFIER)
         if ski_item is None:
-            return None
+            return None, None
         ski = ASN1OctetString.from_bytes(ski_item[2])
         return ski.value, ski_item[1]
 
@@ -456,16 +457,6 @@ def verify_cert(subject_cert: Certificate, issuer_cert: Certificate):
             return False, f'颁发者密钥算法{issuer_alg}与主体签名算法{sig_alg}不一致'
 
         pub_key = SM2PublicKey.from_bytes(issuer_cert.subject_public_key_info[1])
-        if (ski := issuer_cert.subject_key_identifier[0]) is not None:
-            issuer_pub_key_hash = sm3_hash(pub_key.octets)
-            if len(ski) == 20 and ski != issuer_pub_key_hash[12:]:
-                return False, f'SubjectKeyIdentifier与颁发者公钥杂凑(160bit)不一致'
-            if len(ski) == 8:
-                cmp = issuer_pub_key_hash[24:]
-                cmp[0] |= 0x40
-                if ski != cmp:
-                    return False, f'SubjectKeyIdentifier与颁发者公钥杂凑(60bit)不一致'
-
         sig_seq = ASN1Sequence.from_bytes(subject_cert.signature_value)
         r = sig_seq.value[0].value.to_bytes(32, byteorder='big')
         s = sig_seq.value[1].value.to_bytes(32, byteorder='big')
@@ -478,24 +469,56 @@ def verify_cert(subject_cert: Certificate, issuer_cert: Certificate):
     raise CertificateException(f'不支持的签名算法{issuer_alg}')
 
 
-def verify_cert_chain(cert_chain: Sequence[Certificate], root_ca: Optional[Certificate] = None) -> Tuple[bool, str]:
+def verify_cert_chain(cert_chain: Sequence[Certificate], additional_cas: Optional[List[Certificate]] = None) -> Tuple[bool, str]:
     if len(cert_chain) == 0:
         return False, '证书链为空'
 
-    for ca_cert in ROOT_CA_CERTS:
-        if cert_chain[-1] == ca_cert:
-            break
-    else:
-        if root_ca is None or root_ca != cert_chain[-1]:
-            return False, '根证书不在可信根证书范围内'
+    verified: List[Certificate] = []
+    verified.extend(ROOT_CA_CERTS)
+    if additional_cas:
+        verified.extend(additional_cas)
 
-    for i in range(0, len(cert_chain)):
-        subject_cert = cert_chain[i]
-        issuer_cert = cert_chain[i + 1 if i < len(cert_chain) - 1 else i]
-        res, message = verify_cert(subject_cert, issuer_cert)
-        if not res:
-            return res, message
+    unknown = [c for c in cert_chain if c not in verified]
+
+    ski_map = {}
+    for cert in verified:
+        if cert.subject_key_identifier[0]:
+            ski_map[cert.subject_key_identifier[0]] = [cert, True]
+        else:
+            raise CertificateException(f'证书{cert.subject}({cert.serial_number})没有SubjectKeyIdentifier项')
+
+    for cert in unknown:
+        if cert.subject_key_identifier[0]:
+            ski_map[cert.subject_key_identifier[0]] = [cert, False]
+        else:
+            raise CertificateException(f'证书{cert.subject}({cert.serial_number})没有SubjectKeyIdentifier项')
+
+    pairs = []
+    for cert in unknown:
+        if aki := cert.authority_key_identifier[0]:
+            if aki in ski_map:
+                pairs.append((cert, ski_map[aki][0]))
+            else:
+                return False, f'证书{cert.subject}({cert.serial_number})未找到颁发者证书'
+
+    while pairs:
+        for pair in pairs:
+            subject, issuer = pair[0], pair[1]
+            sski = subject.subject_key_identifier[0]
+            iski = issuer.subject_key_identifier[0]
+            if (not ski_map[sski][1]) and ski_map[iski][1]:
+                res, msg = verify_cert(subject, issuer)
+                if res:
+                    pairs.remove(pair)
+                    break
+                else:
+                    return False, msg
+        else:
+            return False, '证书链中存在无法验证的证书: {}'.format('|'.join(p[0].subject for p in pairs))
 
     return True, '验证通过'
+
+
+
 
 
