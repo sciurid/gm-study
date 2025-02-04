@@ -1,6 +1,6 @@
 from unittest import TestCase
 from gmutil import *
-from .certificate import *
+from gmutil.certificate import *
 from os.path import join, abspath, pardir
 
 
