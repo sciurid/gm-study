@@ -376,6 +376,9 @@ class SM2PublicKey:
     def point(self):
         return self._point
 
+    def __eq__(self, other: 'SM2PublicKey'):
+        return self._point == other._point
+
     def __repr__(self):
         return '({},{})'.format(self._point.x_octets.hex().upper(), self._point.y_octets.hex().upper())
 
@@ -386,6 +389,14 @@ class SM2PublicKey:
     @staticmethod
     def from_bytes(octets: Union[bytes, bytearray, memoryview]):
         return SM2PublicKey(SM2Point.from_bytes(octets))
+
+    @staticmethod
+    def from_coordinates(x: Optional[Union[int, bytes]], y: Optional[Union[int, bytes]]):
+        if isinstance(x, bytes):
+            x = int.from_bytes(x, byteorder='big', signed=False)
+        if isinstance(y, bytes):
+            y = int.from_bytes(y, byteorder='big', signed=False)
+        return SM2PublicKey(SM2Point(x, y))
 
     def generate_z(self, uid: bytes = DEFAULT_USER_ID) -> bytes:
         """根据本公钥计算出头部值
@@ -489,6 +500,7 @@ class SM2PrivateKey:
 
     @property
     def value(self):
+        """SM2私钥的整数值（秘密）"""
         return self._secret
 
     def get_public_key(self) -> SM2PublicKey:
@@ -497,15 +509,23 @@ class SM2PrivateKey:
         return self._pub_key
 
     @property
+    def public_key(self) -> SM2PublicKey:
+        return self.get_public_key()
+
+    @property
     def point(self):
         return self.get_public_key().point
 
     def to_bytes(self) -> bytes:
+        """SM2私钥的字节表示（秘密）"""
         return int.to_bytes(self._secret, length=SM2_P_BYTE_LEN, byteorder='big')
 
     @staticmethod
     def from_bytes(octets: bytes) -> 'SM2PrivateKey':
         return SM2PrivateKey(int.from_bytes(octets, byteorder='big', signed=False))
+
+    def __eq__(self, other: 'SM2PrivateKey') -> bool:
+        return self.value == other.value
 
     def __repr__(self):
         return self.to_bytes().hex().upper()
@@ -692,6 +712,24 @@ class SM2KeyExchange:
         self._exchanged_key = sm3_kdf(buffer, self._k_byte_len)
         return self._exchanged_key
 
+    @staticmethod
+    def calculate_sab(is_a: bool, point_uv, za, zb, point_ra, point_rb):
+        # 步骤B8、A9，计算S_B/S_1
+        buffer = bytearray()
+        buffer.extend(point_uv.x_octets)
+        buffer.extend(za)  # Z_A
+        buffer.extend(zb)  # Z_B
+        buffer.extend(point_ra.x_octets)  # x_1
+        buffer.extend(point_ra.y_octets)  # y_1
+        buffer.extend(point_rb.x_octets)  # x_2
+        buffer.extend(point_rb.y_octets)  # y_2
+        mid = sm3_hash(buffer)
+        buffer.clear()
+        buffer.append(0x03 if is_a else 0x02)
+        buffer.extend(point_uv.y_octets)
+        buffer.extend(mid)
+        return sm3_hash(buffer)
+
 
 class SM2KeyExchangePartyA(SM2KeyExchange):
     def __init__(self, private_key: Optional[SM2PrivateKey] = None, uid: bytes = DEFAULT_USER_ID, k_byte_len: int = 16):
@@ -711,13 +749,13 @@ class SM2KeyExchangePartyA(SM2KeyExchange):
     def receive_2(self, public_key_b: SM2PublicKey, point_r_b: SM2Point, uid_b: bytes, s_b: bytes):
         self.calculate_key(True, public_key_b, point_r_b, uid_b)
         # 步骤B8，计算S_1
-        s_1 = calculate_sab(False, self._point_uv, self._own_z, self._other_z,
+        s_1 = SM2KeyExchange.calculate_sab(False, self._point_uv, self._own_z, self._other_z,
                             self.point_r, self._other_point_r)
         if s_1 != s_b:
             raise ValueError("密钥确认步骤（A9）失败：S_B={}, S_1={}".format(s_b.hex(), s_1.hex()))
 
     def send_3(self) -> Tuple[bytes]:
-        s_a = calculate_sab(True, self._point_uv, self._own_z, self._other_z,
+        s_a = SM2KeyExchange.calculate_sab(True, self._point_uv, self._own_z, self._other_z,
                             self.point_r, self._other_point_r)
         return (s_a,)
 
@@ -740,32 +778,17 @@ class SM2KeyExchangePartyB(SM2KeyExchange):
         self.calculate_key(False, public_key_a, point_r_a, uid_a)
 
         # 步骤B8，计算S_B
-        self._s_b = calculate_sab(False, self._point_uv, self._other_z, self._own_z,
+        self._s_b = SM2KeyExchange.calculate_sab(False, self._point_uv, self._other_z, self._own_z,
                                   self._other_point_r, self.point_r)
 
     def send_2(self):
         return self._public_key, self._point_r, self._uid, self._s_b
 
     def receive_3(self, s_a: bytes):
-        s_2 = calculate_sab(True, self._point_uv, self._other_z, self._own_z,
+        s_2 = SM2KeyExchange.calculate_sab(True, self._point_uv, self._other_z, self._own_z,
                             self._other_point_r, self.point_r)
         if s_2 != s_a:
             raise ValueError("密钥确认步骤（A9）失败：S_B={}, S_1={}".format(s_a.hex(), s_2.hex()))
 
 
-def calculate_sab(is_a: bool, point_uv, za, zb, point_ra, point_rb):
-    # 步骤B8、A9，计算S_B/S_1
-    buffer = bytearray()
-    buffer.extend(point_uv.x_octets)
-    buffer.extend(za)  # Z_A
-    buffer.extend(zb)  # Z_B
-    buffer.extend(point_ra.x_octets)  # x_1
-    buffer.extend(point_ra.y_octets)  # y_1
-    buffer.extend(point_rb.x_octets)  # x_2
-    buffer.extend(point_rb.y_octets)  # y_2
-    mid = sm3_hash(buffer)
-    buffer.clear()
-    buffer.append(0x03 if is_a else 0x02)
-    buffer.extend(point_uv.y_octets)
-    buffer.extend(mid)
-    return sm3_hash(buffer)
+

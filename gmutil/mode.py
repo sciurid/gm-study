@@ -637,5 +637,5 @@ def get_mode(mode_name: str, algorithm: BlockCipherAlgorithm, **kwargs):
         gcm = GCM(algorithm=algorithm, iv=kwargs['iv'], aad=kwargs['aad'] if 'aad' in kwargs else None)
         return gcm
     else:
-        raise ValueError()
+        raise ValueError(f'不支持的工作模式{mode_name}')
 
