@@ -1,6 +1,26 @@
 from typing import Tuple, Optional, Union, Literal
 import secrets
 
+def rls_32(x: int, n: int):
+    """32位循环左移函数（Rotate Left Shift）：x <<< n
+    """
+    # assert x.bit_length() <= 32
+    if n >= 32:
+        n = n % 32
+    return ((x << n) & 0xffffffff) | (x >> (32 - n))
+
+
+def mod_add_32(a: int, b: int):
+    """模 2 ** 32 加法"""
+    return (a + b) & 0xffffffff
+
+
+def mod_adds_32(*args):
+    """模 2 ** 32 连续加法"""
+    s = 0
+    for n in args:
+        s += n
+    return s & 0xffffffff
 
 def add_mod_prime(p: int, a: int, b: int) -> int:
     """模素数加法"""

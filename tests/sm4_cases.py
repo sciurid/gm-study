@@ -31,13 +31,13 @@ class SM4TestCase(unittest.TestCase):
         self.assertEqual(message, restored)
 
         # GB/T 32097-2016 A.2
-        # sm4 = SM4(secret_key)
-        # cipher_text = message
-        # for _ in range(1000000):
-        #     cipher_text = sm4.encrypt_block(cipher_text)
-        #     if _ % 10000 == 0:
-        #         print(_)
-        # self.assertEqual(cipher_text, bytes.fromhex('595298C7 C6FD271F 0402F804 C33D3F66'))
+        sm4 = SM4(secret_key)
+        cipher_text = message
+        for _ in range(1000000):
+            cipher_text = sm4.encrypt_block(cipher_text)
+            if _ % 10000 == 0:
+                print(_)
+        self.assertEqual(cipher_text, bytes.fromhex('595298C7 C6FD271F 0402F804 C33D3F66'))
 
     def test_sm4_ecb(self):
         ecb = ECB(SM4(SM4TestCase.SECRET_KEY))

@@ -1,33 +1,12 @@
 from typing import Union, Tuple, Sequence
 from .mac import hmac
+from .calculation import rls_32, mod_adds_32
 
 # GB/T 32905-2016 4.1 初始值
 _SM3_IV = (0x7380166f, 0x4914b2b9, 0x172442d7, 0xda8a0600, 0xa96f30bc, 0x163138aa, 0xe38dee4d, 0xb0fb0e4e)
 
 # GB/T 32905-2016 4.2 常量
 _SM3_TJ = tuple(0x79cc4519 if 0 <= j < 16 else 0x7a879d8a for j in range(0, 64))
-
-
-def rls_32(x: int, n: int):
-    """32位循环左移函数（Rotate Left Shift）：x <<< n
-    """
-    # assert x.bit_length() <= 32
-    if n >= 32:
-        n = n % 32
-    return (x << n) & 0xffffffff | (x >> (32 - n))
-
-
-def mod_add_32(a: int, b: int):
-    """模 2 ** 32 加法"""
-    return (a + b) & 0xffffffff
-
-
-def mod_adds_32(*args):
-    """模 2 ** 32 连续加法"""
-    s = 0
-    for n in args:
-        s += n
-    return s & 0xffffffff
 
 
 def _sm3_ff_j(x: int, y: int, z: int, j: int):

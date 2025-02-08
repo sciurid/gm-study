@@ -1,11 +1,10 @@
-# -*-coding:utf-8-*-
-
 from typing import *
 import logging
 
 from .padding import *
 from .mode import *
 from .mac import gmac
+from .calculation import rls_32
 
 logger = logging.getLogger(__name__)
 
@@ -47,107 +46,6 @@ _SM4_CK = [
 ]
 
 
-def _i32_to_i8l(n: int) -> List[int]:
-    """32位无符号整数转为4个8位无符号整数"""
-    return [((n >> i) & 0xff) for i in range(24, -1, -8)]
-
-
-def _i8l_to_i32(list_uint8: List[int]) -> int:
-    """4个8位无符号整数转为32为无符号整数"""
-    assert len(list_uint8) == 4
-    n = 0
-    for p in list_uint8:
-        assert 0 <= p < 256
-        n = (n << 8) | p
-    return n
-
-
-def _rls(x: Union[int, List[int]], t: int) -> Union[int, List[int]]:
-    """循环左移函数 Rotate Left Shift
-
-    :param x: 输入32位无符号整数（整数，或者由4个8位整数构成的列表）
-    :param t: 循环左移位数
-    :return 输出32位无符号整数（整数，或者由4个8位整数构成的列表）
-    """
-    t = t % 32
-    if isinstance(x, int):
-        return ((x << t) & 0xffffffff) | (x >> (32 - t))
-
-    n = _i8l_to_i32(x)
-    n = ((n << t) & 0xffffffff) | (n >> (32 - t))
-    return _i32_to_i8l(n)
-
-
-def _round_function(x: List[int], rk: int):
-    """GB/T 32907-2016 6.1 轮函数结构
-
-    :param x 本轮输入，4个32位无符号整数
-    :param rk 轮密钥，32位无符号整数
-    :return 本轮输出，32为无符号整数
-    """
-    assert len(x) == 4
-    a = x[1] ^ x[2] ^ x[3] ^ rk
-    b = _i8l_to_i32([_SM4_SBOX[n] for n in _i32_to_i8l(a)])  # GB/T 32907-2016 6.2 合成置换T a) 非线性变换tau
-    c = b ^ _rls(b, 2) ^ _rls(b, 10) ^ _rls(b, 18) ^ _rls(b, 24)  # GB/T 32907-2016 6.2 合成置换T b) 线性变换L
-    return x[0] ^ c
-
-
-def _expand_round_keys(mk_octets: Union[bytes, bytearray]):
-    """GB/T 32907-2016 7.3 密钥扩展算法
-
-    :param mk_octets 加密密钥，128-bit字节串
-    """
-    assert len(mk_octets) == 16
-    mv = memoryview(mk_octets)
-    mk = [int.from_bytes(mv[i: i + 4], byteorder='big', signed=False) for i in range(0, 16, 4)]  # 转换成4个32位整数
-    ks = [mk_i ^ fk_i for mk_i, fk_i in zip(mk, _SM4_FK)]  # 式（6）
-    for i in range(32):
-        a = ks[i + 1] ^ ks[i + 2] ^ ks[i + 3] ^ _SM4_CK[i]
-        b = _i8l_to_i32([_SM4_SBOX[n] for n in _i32_to_i8l(a)])  # GB/T 32907-2016 6.2 合成置换T a) 非线性变换tau
-        c = b ^ _rls(b, 13) ^ _rls(b, 23)
-        ks.append(ks[i] ^ c)  # 式（7）
-
-    return ks[4:]
-
-
-def _do_sm4_rounds(message: Union[bytes, bytearray], round_keys: List[int], encrypt: bool = True) -> bytes:
-    """SM4轮函数迭代
-
-    GB/T 32907-2016 7.1 加密算法
-    :param message 明文输入
-    :param round_keys 轮密钥
-    :param encrypt 加密/解密，True表示加密，False表示解密
-    """
-    mmv = memoryview(message)
-    xs = [int.from_bytes(mmv[i: i + 4], byteorder='big', signed=False) for i in range(0, 16, 4)]
-
-    for i in range(32):
-        x_i = _round_function(xs[i:i + 4], round_keys[i if encrypt else (31 - i)])  # 加密时正向使用轮密钥，解密时反向使用轮密钥
-        # logger.debug('rk_%02d=%s, x_%02d=%s', i, hex(round_keys[i]), i, hex(xs[i]))
-        xs.append(x_i)
-
-    buffer = bytearray()
-    for i in range(35, 31, -1):
-        buffer.extend(xs[i].to_bytes(length=4, byteorder='big', signed=False))
-    return bytes(buffer)
-
-
-def sm4_function(message: Union[bytes, bytearray, memoryview], secret_key: Union[bytes, bytearray, memoryview],
-                 encrypt: bool = True):
-    """SM4加密和解密函数
-
-    适用于一次性加解密的情况，相同密钥反复使用的情况适合使用SM4类
-    GB/T 32907-2016 7.1 加密算法
-    :param message 明文输入
-    :param secret_key 加密密钥
-    :param encrypt 加密/解密，True表示加密，False表示解密
-    """
-    assert len(message) == 16
-    assert len(secret_key) == 16
-
-    return _do_sm4_rounds(message, _expand_round_keys(secret_key), encrypt)
-
-
 def sm4_encrypt_block(secret_key: Union[bytes, bytearray, memoryview],
                       message: Union[bytes, bytearray, memoryview]) -> bytes:
     """SM4加密函数
@@ -158,7 +56,7 @@ def sm4_encrypt_block(secret_key: Union[bytes, bytearray, memoryview],
     :param message 明文消息值
     :return: 密文消息值
     """
-    return sm4_function(message, secret_key, True)
+    return SM4(secret_key).encrypt_block(message)
 
 
 def sm4_decrypt_block(secret_key: Union[bytes, bytearray, memoryview],
@@ -170,7 +68,7 @@ def sm4_decrypt_block(secret_key: Union[bytes, bytearray, memoryview],
     :param cipher_text 密文消息值
     :return: 明文消息值
     """
-    return sm4_function(cipher_text, secret_key, False)
+    return SM4(secret_key).decrypt_block(cipher_text)
 
 
 class SM4(BlockCipherAlgorithm):
@@ -178,7 +76,7 @@ class SM4(BlockCipherAlgorithm):
     def __init__(self, secret_key: bytes):
         super().__init__(SM4.BLOCK_SIZE)
         self._secret_key = secret_key
-        self._rks = _expand_round_keys(secret_key)
+        self._rks = SM4._expand_round_keys(self._secret_key)
 
     BLOCK_SIZE = 128
 
@@ -187,10 +85,88 @@ class SM4(BlockCipherAlgorithm):
         return self.BLOCK_SIZE
 
     def encrypt_block(self, message: Union[bytes, bytearray, memoryview]) -> bytes:
-        return _do_sm4_rounds(message, self._rks, True)
+        return self._do_sm4_rounds(message, True)
 
     def decrypt_block(self, message: Union[bytes, bytearray, memoryview]) -> bytes:
-        return _do_sm4_rounds(message, self._rks, False)
+        return self._do_sm4_rounds(message, False)
+
+    @staticmethod
+    def _expand_round_keys(mk_octets: Union[bytes, bytearray]):
+        """GB/T 32907-2016 7.3 密钥扩展算法
+
+        :param mk_octets 加密密钥，128-bit字节串
+        """
+        assert len(mk_octets) == 16
+        mv = memoryview(mk_octets)
+        mk = [int.from_bytes(mv[i: i + 4], byteorder='big', signed=False) for i in range(0, 16, 4)]  # 转换成4个32位整数
+        for i in range(4):  # 式（6）
+            mk[i] ^= _SM4_FK[i]
+
+        def _rk(_k0, _k1, _k2, _k3, ck):
+            a = _k1 ^ _k2 ^ _k3 ^ ck
+            # GB/T 32907-2016 6.2 合成置换T a) 非线性变换tau
+            b = 0
+            for i in range(4):  # 将32位的块分成4个8位整数，经Sbox转换后重新组合成32位整数
+                n = a & 0xff
+                b |= _SM4_SBOX[n] << (i * 8)
+                a >>= 8
+            # b = _i8l_to_i32([_SM4_SBOX[n] for n in _i32_to_i8l(a)])
+            c = b ^ rls_32(b, 13) ^ rls_32(b, 23)  # b) 线性变换L'
+            return _k0 ^ c
+
+        ks = [0] * 32
+        for j in range(4):
+            k0 = mk[j]
+            k1 = mk[j + 1] if j < 3 else ks[j - 3]
+            k2 = mk[j + 2] if j < 2 else ks[j - 2]
+            k3 = mk[j + 3] if j < 1 else ks[j - 1]
+            ks[j] = _rk(k0, k1, k2, k3, _SM4_CK[j])
+
+        for j in range(4, 32):
+            ks[j] = _rk(ks[j - 4], ks[j - 3], ks[j - 2], ks[j - 1], _SM4_CK[j])
+
+        return ks
+
+    def _do_sm4_rounds(self, message: Union[bytes, bytearray, memoryview], encrypt: bool = True) -> bytes:
+        """SM4轮函数迭代
+
+        GB/T 32907-2016 7.1 加密算法
+        :param message 明文输入
+        :param encrypt 加密/解密，True表示加密，False表示解密
+        """
+        if not isinstance(message, memoryview):
+            message = memoryview(message)
+        xs = [0] * 36
+        for i, j in enumerate(range(0, 16, 4)):
+            xs[i] = int.from_bytes(message[j: j + 4], byteorder='big', signed=False)
+
+        def _round_function(x: List[int], rk: int):
+            """GB/T 32907-2016 6.1 轮函数结构
+
+            :param x 本轮输入，4个32位无符号整数
+            :param rk 轮密钥，32位无符号整数
+            :return 本轮输出，32为无符号整数
+            """
+            assert len(x) == 4
+            a = x[1] ^ x[2] ^ x[3] ^ rk
+            # GB/T 32907-2016 6.2 合成置换T a) 非线性变换tau
+            b = 0
+            for i in range(4):  # 将32位的块分成4个8位整数，经Sbox转换后重新组合成32位整数
+                n = a & 0xff
+                b |= _SM4_SBOX[n] << (i * 8)
+                a >>= 8
+            # GB/T 32907-2016 6.2 合成置换T b) 线性变换L
+            c = b ^ rls_32(b, 2) ^ rls_32(b, 10) ^ rls_32(b, 18) ^ rls_32(b, 24)
+            return x[0] ^ c
+
+        for i, k in enumerate(self._rks if encrypt else reversed(self._rks)): # 加密时正向使用轮密钥，解密时反向使用轮密钥
+            j = i + 4
+            xs[j] = _round_function(xs[i:j], k)
+
+        buffer = bytearray()
+        for i in range(35, 31, -1):
+            buffer.extend(xs[i].to_bytes(length=4, byteorder='big', signed=False))
+        return bytes(buffer)
 
 
 class SM4Encryptor(Codec):
