@@ -6,7 +6,7 @@ import base64
 from os.path import abspath, join, dirname, realpath
 import logging
 
-from .sm3hash import sm3_hash
+from .sm3 import sm3_hash
 from .sm2 import SM2PublicKey
 
 logger = logging.getLogger(__name__)

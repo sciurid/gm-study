@@ -1,6 +1,6 @@
 from typing import Optional, Tuple, List
 import secrets
-from .sm3hash import sm3_hash, sm3_kdf
+from .sm3 import sm3_hash, sm3_kdf
 from .calculation import *
 import logging
 

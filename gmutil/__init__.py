@@ -1,6 +1,6 @@
 from .commons import *
 from .sm2 import *
-from .sm3hash import *
+from .sm3 import *
 from .sm4 import *
 from .mac import *
 from .mode import *
