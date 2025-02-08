@@ -17,19 +17,36 @@ class SM2TestCase(unittest.TestCase):
     def test_encryption(self, message = 'A fox jumps over the lazy dog.'):
         print("Message:", message.encode('ascii').hex())
 
-        prikey = SM2PrivateKey()
-        print("Private Key:", prikey.to_bytes().hex())
-        pubkey = prikey.get_public_key()
-        print("Public Key:", pubkey)
+        start_time = datetime.now()
+        for _ in range(100):
+            prikey = SM2PrivateKey()
+            print("Private Key:", prikey.to_bytes().hex())
+            pubkey = prikey.get_public_key()
+            print("Public Key:", pubkey)
 
-        cipher_text = pubkey.encrypt(message.encode())
-        print("Cipher Text:", cipher_text.hex().upper())
+            cipher_text = pubkey.encrypt(message.encode())
+            print("Cipher Text:", cipher_text.hex().upper())
 
-        recovered = prikey.decrypt(cipher_text)
-        print("Recovered:", recovered.hex().upper())
-        print("Message:", recovered.decode('ascii'))
+            recovered = prikey.decrypt(cipher_text)
+            print("Recovered:", recovered.hex().upper())
+            print("Message:", recovered.decode('ascii'))
 
-        self.assertEqual(message, recovered.decode('ascii'))
+            self.assertEqual(message, recovered.decode('ascii'))
+        end_time = datetime.now()
+        t1 = end_time - start_time
+
+        start_time = datetime.now()
+        for _ in range(100):
+            cipher_text = pubkey.encrypt(message.encode())
+            print("Cipher Text:", cipher_text.hex().upper())
+
+            recovered = prikey.decrypt(cipher_text)
+            print("Recovered:", recovered.hex().upper())
+            print("Message:", recovered.decode('ascii'))
+            self.assertEqual(message, recovered.decode('ascii'))
+        end_time = datetime.now()
+        t2 = end_time - start_time
+        print(t1, t2)
 
     def test_simple_key_exchange(self):
         user_a = SM2KeyExchange(uid='user-a'.encode())

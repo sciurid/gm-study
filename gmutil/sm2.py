@@ -517,10 +517,10 @@ class SM2Point_Jacobian:
     def __mul__(self, k: int):
         """SM2点的整数倍，使用了二进制的快速计算方法，并缓存了2的整数次幂用于加速计算"""
         if self._pow_two_exp is None:
-            self._pow_two_exp = []
+            self._pow_two_exp = [None] * (SM2_P_BYTE_LEN * 8)
             exp_p = self
             for r in range(SM2_P_BYTE_LEN * 8):
-                self._pow_two_exp.append(exp_p)
+                self._pow_two_exp[r] = exp_p
                 exp_p += exp_p
                 exp_p = exp_p.normalize()
 

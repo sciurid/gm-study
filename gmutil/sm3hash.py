@@ -109,7 +109,7 @@ class SM3Hash:
     DIGEST_BYTE_LENGTH = 32
     DIGEST_SIZE = DIGEST_BYTE_LENGTH * 8
 
-    def __init__(self):
+    def __init__(self, buffer_limit: int = 1024):
         self._buffer = bytearray()
         self._cursor = 0
         self._offset = 0
@@ -117,6 +117,8 @@ class SM3Hash:
 
         self._w = [0] * 68
         self._w_ = [0] * 64
+
+        self._buffer_limit = buffer_limit
 
     def _expand(self, block_in: memoryview):
         """消息扩展函数
@@ -178,9 +180,10 @@ class SM3Hash:
             self._cursor = next_cursor
         buffer_view.release()
 
-        self._buffer = self._buffer[self._cursor:]
-        self._offset += self._cursor
-        self._cursor = 0
+        if self._cursor > self._buffer_limit:
+            self._buffer = self._buffer[self._cursor:]
+            self._offset += self._cursor
+            self._cursor = 0
 
     def update(self, message: bytes):
         self._buffer.extend(message)
