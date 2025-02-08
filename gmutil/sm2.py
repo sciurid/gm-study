@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 import secrets
 from .sm3 import sm3_hash, sm3_kdf
 from .calculation import *
@@ -63,11 +63,6 @@ def on_curve(x: int, y: int) -> int:
     return left == right
 
 
-def calculate_y(x: int) -> int:
-    """根据SM2椭圆曲线上点的x计算对应的y"""
-    return p_sqrt((x ** 3 + SM2_A * x + SM2_B) % SM2_P)
-
-
 def _i2h(n: int) -> Optional[str]:
     """将整数值转化为长度为ECC的HEX字符串，用于点坐标的显示"""
     return _i2b(n).hex()
@@ -78,51 +73,13 @@ def _i2b(n: int):
     return int.to_bytes(n, length=SM2_P_BYTE_LEN, byteorder="big")
 
 
-def jacobian_add_sm2_points(x1: int, y1: int, x2: int, y2: int) -> Union[Tuple[int, int], Tuple[None, None]]:
-    """GB/T 32918.1-2016 A.1.2.3.2 Jacobian加重射影坐标系上的点加法。
+"""
+========================================================================================================================
+SM2椭圆曲线上点的Jacobian仿射坐标系实现
 
-    比仿射坐标系下的计算量要小。不处理O+P/P+O的情况。
-    """
-    if x1 == x2:
-        if y1 == y2:  # 倍点
-            l1 = p_add(p_muls(x1, x1, 3), SM2_A)
-            l2 = p_muls(x1, y1, y1, 4)
-            l3 = p_mul(p_pow(y1, 4), 8)
-            x3_ = p_minus(p_mul(l1, l1), p_mul(l2, 2))
-            y3_ = p_minus(p_mul(l1, p_minus(l2, x3_)), l3)
-            z3_ = p_mul(2, y1)
-
-            d = p_mul(z3_, z3_)
-            x3 = p_div(x3_, d)
-            d = p_mul(d, z3_)
-            y3 = p_div(y3_, d)
-            return x3, y3
-
-        else:  # 逆元素相加
-            assert p_add(y1, y2) == 0
-            return None, None
-    else:
-        l1 = x1
-        l2 = x2
-        l3 = p_minus(l1, l2)
-        l4 = y1
-        l5 = y2
-        l6 = p_minus(l4, l5)
-        l7 = p_add(l1, l2)
-        l8 = p_add(l4, l5)
-
-        l3_2 = p_mul(l3, l3)
-        l3_3 = p_mul(l3_2, l3)
-        x3_ = p_minus(p_mul(l6, l6), p_mul(l7, l3_2))
-        y3_ = p_minus(p_mul(l6, p_minus(p_mul(l1, l3_2), x3_)), p_mul(l4, l3_3))
-        z3_ = l3
-
-        d = p_mul(z3_, z3_)
-        x3 = p_div(x3_, d)
-        d = p_mul(d, z3_)
-        y3 = p_div(y3_, d)
-        return x3, y3
-
+未进行计算优化，仅用于学习参考。
+========================================================================================================================
+"""
 
 class SM2Point:
     """SM2椭圆曲线上的整数点，简称SM2点"""
@@ -165,30 +122,27 @@ class SM2Point:
             # assert other._y is None
             return self
 
-        x, y = jacobian_add_sm2_points(self._x, self._y, other._x, other._y)
-        return SM2Point(x, y)
+        if self._x == other._x:
+            if self._y == other._y:  # 倍点规则，GB/T 32918.1-2016 3.2.3.1 d) (P4)
+                assert self._y != 0
+                _lambda_numerator = p_add(p_mul(3, p_pow(self._x, 2)), SM2_A)  # x ** 2 * 3 + a
+                _lambda_denominator = p_mul(2, self._y)  # 2 * y
+                _lambda = p_div(_lambda_numerator, _lambda_denominator)
 
-        # if self._x == other._x:
-        #     if self._y == other._y:  # 倍点规则，GB/T 32918.1-2016 3.2.3.1 d) (P4)
-        #         assert self._y != 0
-        #         _lambda_numerator = p_add(p_mul(3, p_pow(self._x, 2)), SM2_A)  # x ** 2 * 3 + a
-        #         _lambda_denominator = p_mul(2, self._y)  # 2 * y
-        #         _lambda = p_div(_lambda_numerator, _lambda_denominator)
-        #
-        #         x = p_minus(p_pow(_lambda, 2), p_mul(2, self._x))  # lambda ** 2 - 2 * x
-        #         y = p_minus(p_mul(_lambda, p_minus(self._x, x)), self._y)
-        #         return SM2Point(x, y)
-        #     if p_add(self._y, other._y) == 0:  # 互逆点相加结果为无穷远点O
-        #         return SM2Point(None, None)
-        #
-        #     raise ValueError(f"Impossible condition: {self} + {other}")
-        # else:  # 非互逆不同点相加规则，GB/T 32918.1-2016 3.2.3.1 d) (P4)
-        #     _lambda_numerator = p_minus(other._y, self._y)  # y2 - y1
-        #     _lambda_denominator = p_minus(other._x, self._x)  # x2 - x1
-        #     _lambda = p_div(_lambda_numerator, _lambda_denominator)
-        #     x = p_minus(p_pow(_lambda, 2), p_add(self._x, other._x))  # lambda ** 2 - x1 - x2
-        #     y = p_minus(p_mul(_lambda, p_minus(self._x, x)), self._y)  # lambda * (x1 - x3) - y1
-        #     return SM2Point(x, y)
+                x = p_minus(p_pow(_lambda, 2), p_mul(2, self._x))  # lambda ** 2 - 2 * x
+                y = p_minus(p_mul(_lambda, p_minus(self._x, x)), self._y)
+                return SM2Point(x, y)
+            if p_add(self._y, other._y) == 0:  # 互逆点相加结果为无穷远点O
+                return SM2Point(None, None)
+
+            raise ValueError(f"Impossible condition: {self} + {other}")
+        else:  # 非互逆不同点相加规则，GB/T 32918.1-2016 3.2.3.1 d) (P4)
+            _lambda_numerator = p_minus(other._y, self._y)  # y2 - y1
+            _lambda_denominator = p_minus(other._x, self._x)  # x2 - x1
+            _lambda = p_div(_lambda_numerator, _lambda_denominator)
+            x = p_minus(p_pow(_lambda, 2), p_add(self._x, other._x))  # lambda ** 2 - x1 - x2
+            y = p_minus(p_mul(_lambda, p_minus(self._x, x)), self._y)  # lambda * (x1 - x3) - y1
+            return SM2Point(x, y)
 
     def __mul__(self, k: int) -> 'SM2Point':
         """SM2点的整数倍"""
@@ -265,6 +219,14 @@ class SM2Point:
         """从字节串表示中恢复SM2点
         GB/T 32918.1-2016 4.2.10
         """
+
+        def calc_y(_x: int) -> int:
+            """根据SM2椭圆曲线上点的x计算对应的y
+
+            GB/T 32918.1-2016 A.5.2
+            """
+            return p_sqrt((_x ** 3 + SM2_A * _x + SM2_B) % SM2_P)
+
         pc = octets[0]
         if pc == 0x04:
             if len(octets) != 2 * SM2_P_BYTE_LEN + 1:
@@ -277,8 +239,8 @@ class SM2Point:
             if len(octets) != SM2_P_BYTE_LEN + 1:
                 raise ValueError(f"SM2点压缩格式长度{len(octets)}不符合标准，应当为{SM2_P_BYTE_LEN + 1}")
             x = int.from_bytes(octets[1:], byteorder='big')
-            y_pow = p_adds(p_pow(x, 3), p_mul(SM2_A, x), SM2_B)  # GB/T 32918.1-2016 A.5.2
-            y = p_sqrt(y_pow)
+            y_pow = p_adds(p_pow(x, 3), p_mul(SM2_A, x), SM2_B)
+            y = calc_y(x)
 
             if y & 0x01 == y_p:
                 return SM2Point(x, y)
@@ -290,8 +252,7 @@ class SM2Point:
             if len(octets) != 2 * SM2_P_BYTE_LEN + 1:
                 raise ValueError(f"SM2点混合格式长度{len(octets)}不符合标准，应当为{2 * SM2_P_BYTE_LEN + 1}")
             x = int.from_bytes(octets[1:], byteorder='big')
-            ry_pow = p_adds(p_pow(x, 3), p_mul(SM2_A, x), SM2_B)
-            ry = p_sqrt(ry_pow)
+            ry = calc_y(x)
 
             if ry & 0x01 == y_p:
                 ry = SM2_P - ry
@@ -310,40 +271,361 @@ class SM2Point:
 
 POINT_G = SM2Point(SM2_X, SM2_Y)  # SM2曲线的基点G
 
-_POINT_G_EXPONENT_2_VALUES = []  # 基点G的2的幂倍列表，用于快速计算公钥
+
+"""
+========================================================================================================================
+SM2椭圆曲线上点的Jacobian加重射影坐标系实现
+
+采取了尽可能少计算求反、保留计算中间值等方式降低计算量。实际使用于SM2的公钥、私钥和密钥交换中。
+========================================================================================================================
+"""
+
+class _Calculation_Cache:
+    """用于加速计算的中间值缓存"""
+    def __init__(self, x: int, y: int, z: int):
+        self.x = x
+        self.y = y
+        self.z = z
+
+        """
+        0: pow x 2
+        1: pow x 3
+        2: pow y 2
+        3: pow y 4
+        4: inv z 1
+        5: inv z 2
+        6: inv z 3
+        7: pow z 2
+        8: pow z 3
+        9: pow z 4
+        10: pow z 6
+        """
+        self._cache: List[Optional[int]] = [None] * 11
+
+    @property
+    def pow_x_2(self):
+        if self._cache[0] is None:
+            self._cache[0] = mul_mod_prime(SM2_P, self.x, self.x)
+        return self._cache[0]
+
+    @property
+    def pow_x_3(self):
+        if self._cache[1] is None:
+            self._cache[1] = mul_mod_prime(SM2_P, self.pow_x_2, self.x)
+        return self._cache[1]
+
+    @property
+    def pow_y_2(self):
+        if self._cache[2] is None:
+            self._cache[2] = mul_mod_prime(SM2_P, self.y, self.y)
+        return self._cache[2]
+
+    @property
+    def pow_y_4(self):
+        if self._cache[3] is None:
+            y_2 = self.pow_y_2
+            self._cache[3] = mul_mod_prime(SM2_P, y_2, y_2)
+        return self._cache[3]
+
+    @property
+    def inv_z_1(self):
+        if self._cache[4] is None:
+            self._cache[4] = inverse_mod_prime(SM2_P, self.z)
+        return self._cache[4]
+
+    @property
+    def inv_z_2(self):
+        if self._cache[5] is None:
+            self._cache[5] = mul_mod_prime(SM2_P, self.inv_z_1, self.inv_z_1)
+        return self._cache[5]
+
+    @property
+    def inv_z_3(self):
+        if self._cache[6] is None:
+            self._cache[6] = mul_mod_prime(SM2_P, self.inv_z_2, self.inv_z_1)
+        return self._cache[6]
+
+    @property
+    def pow_z_2(self):
+        if self._cache[7] is None:
+            self._cache[7] = mul_mod_prime(SM2_P, self.z, self.z)
+        return self._cache[7]
+
+    @property
+    def pow_z_3(self):
+        if self._cache[8] is None:
+            self._cache[8] = mul_mod_prime(SM2_P, self.pow_z_2, self.z)
+        return self._cache[8]
+
+    @property
+    def pow_z_4(self):
+        if self._cache[9] is None:
+            self._cache[9] = mul_mod_prime(SM2_P, self.pow_z_2, self.pow_z_2)
+        return self._cache[9]
+
+    @property
+    def pow_z_6(self):
+        if self._cache[10] is None:
+            self._cache[10] = mul_mod_prime(SM2_P, self.pow_z_3, self.pow_z_3)
+        return self._cache[10]
 
 
-def _init_quick_mul_g_point():
-    """初始化基点G的2的幂倍列表，用于快速计算公钥"""
-    global _POINT_G_EXPONENT_2_VALUES
-    if len(_POINT_G_EXPONENT_2_VALUES) == 0:
-        _gbv = POINT_G
-        for i in range(SM2_P_BYTE_LEN * 8):
-            _POINT_G_EXPONENT_2_VALUES.append(_gbv)
-            _gbv += _gbv
+class SM2Point_Jacobian:
+    def __init__(self, x: Optional[int], y: Optional[int], z: int = 1):
+        assert 0 <= x < SM2_P
+        assert 0 <= y < SM2_P
+        assert 0 <= z < SM2_P
+        assert (z == 0) == (x == y)  # z为0时表示无穷远点
 
-    # for i in range(ECC_LEN * 8):
-    #     assert G_POINT_BIT_VALUES[i]  == G_POINT * (1 << i)
+        self._x = x
+        self._y = y
+        self._z = z
+        self._cache = _Calculation_Cache(x, y, z)
+
+        self._norm_x = None
+        self._norm_y = None
+        self._pow_two_exp = None
+        assert self.on_curve()
+
+    @property
+    def infinite(self):
+        return self._z == 0
+
+    @property
+    def x(self):
+        if self._z == 0:
+            return None
+        elif self._norm_x is None:
+            self._norm_x = mul_mod_prime(SM2_P, self._x, self._cache.inv_z_2)
+        return self._norm_x
+
+    @property
+    def x_octets(self):
+        return None if self.x is None else self.x.to_bytes(SM2_P_BYTE_LEN, byteorder='big', signed=False)
+
+    @property
+    def y(self):
+        if self._z == 0:
+            return None
+        elif self._norm_y is None:
+            self._norm_y = mul_mod_prime(SM2_P, self._y, self._cache.inv_z_3)
+        return self._norm_y
+
+    @property
+    def y_octets(self):
+        return None if self.y is None else self.y.to_bytes(SM2_P_BYTE_LEN, byteorder='big', signed=False)
+
+    def normalize(self):
+        if self._z == 0:
+            return SM2Point_Jacobian(1, 1, 0)
+        else:
+            return SM2Point_Jacobian(self.x, self.y)
+
+    def on_curve(self):
+        if self._z == 0:
+            return True
+
+        left = self._cache.pow_y_2
+
+        if self._z == 1:
+            right = adds_mod_prime(SM2_P, self._cache.pow_x_3,
+                                   mul_mod_prime(SM2_P, SM2_A, self._x), SM2_B)
+        else:
+            right = adds_mod_prime(SM2_P,self._cache.pow_x_3,
+                                   muls_mod_prime(SM2_P, SM2_A, self._x, self._cache.pow_z_4),
+                                   mul_mod_prime(SM2_P, SM2_B, self._cache.pow_z_6))
+        return left == right
+
+    @staticmethod
+    def check_same_or_reverse_point(p1: 'SM2Point_Jacobian', p2: 'SM2Point_Jacobian'):
+        """检验不为无穷远的两个点是否相同或互为逆元"""
+        lx = mul_mod_prime(SM2_P, p1._x, p2._cache.pow_z_2)
+        rx = mul_mod_prime(SM2_P, p2._x, p1._cache.pow_z_2)
+        if lx != rx:
+            return 0
+        ly = mul_mod_prime(SM2_P, p1._y, p2._cache.pow_z_3)
+        ry = mul_mod_prime(SM2_P, p2._y, p1._cache.pow_z_3)
+        if ly == ry:
+            return 1
+        elif mul_mod_prime(SM2_P, ly, ry) == 0:
+            return -1
+        else:
+            raise ValueError('相同X的两点Y不相同也不相反')
+
+    def __eq__(self, other: 'SM2Point_Jacobian'):
+        return SM2Point_Jacobian.check_same_or_reverse_point(self, other) == 1
+
+    def __repr__(self):
+        """SM2点的显示表示"""
+        if self.infinite:
+            return "(INFINITE POINT)"
+        return f'Point(x={self.x_octets.hex()}, y={self.y_octets.hex()})'
+
+    @staticmethod
+    def point_add(p1: 'SM2Point_Jacobian', p2: 'SM2Point_Jacobian'):
+        if p1.infinite:
+            return p2
+        if p2.infinite:
+            return p1
+
+        sr = SM2Point_Jacobian.check_same_or_reverse_point(p1, p2)
+        if sr == -1:
+            return SM2Point_Jacobian(1, 1, 0)
+
+        if sr == 1:
+            l1 = add_mod_prime(SM2_P, mul_mod_prime(SM2_P, 3, p1._cache.pow_x_2),
+                               mul_mod_prime(SM2_P, SM2_A, p1._cache.pow_z_4))
+            l2 = muls_mod_prime(SM2_P, 4, p1._x, p1._cache.pow_y_2)
+            l3 = mul_mod_prime(SM2_P, 8, p1._cache.pow_y_4)
+
+            x3 = minus_mod_prime(SM2_P, mul_mod_prime(SM2_P, l1, l1), muls_mod_prime(SM2_P, 2, l2))
+            y3 = minus_mod_prime(SM2_P, mul_mod_prime(SM2_P, l1, minus_mod_prime(SM2_P, l2, x3)), l3)
+            z3 = muls_mod_prime(SM2_P, 2, p1._y, p1._z)
+            return SM2Point_Jacobian(x3, y3, z3)
+        else:
+            l1 = mul_mod_prime(SM2_P, p1._x, p2._cache.pow_z_2)
+            l2 = mul_mod_prime(SM2_P, p2._x, p1._cache.pow_z_2)
+            l3 = minus_mod_prime(SM2_P, l1, l2)
+            l4 = mul_mod_prime(SM2_P, p1._y, p2._cache.pow_z_3)
+            l5 = mul_mod_prime(SM2_P, p2._y, p1._cache.pow_z_3)
+            l6 = minus_mod_prime(SM2_P, l4, l5)
+            l7 = add_mod_prime(SM2_P, l1, l2)
+
+            l3_2 = mul_mod_prime(SM2_P, l3, l3)
+            l3_3 = mul_mod_prime(SM2_P, l3_2, l3)
+
+            x3 = minus_mod_prime(SM2_P, mul_mod_prime(SM2_P,l6, l6), mul_mod_prime(SM2_P, l7, l3_2))
+
+            y3_p1 = minus_mod_prime(SM2_P, mul_mod_prime(SM2_P, l1, l3_2), x3)
+            y3_p2 = mul_mod_prime(SM2_P, l4, l3_3)
+            y3 = minus_mod_prime(SM2_P, mul_mod_prime(SM2_P, l6, y3_p1), y3_p2)
+            z3 = muls_mod_prime(SM2_P, p1._z, p2._z, l3)
+            return SM2Point_Jacobian(x3, y3, z3)
+
+    def __add__(self, other):
+        return SM2Point_Jacobian.point_add(self, other)
+
+    def __radd__(self, other):
+        return SM2Point_Jacobian.point_add(other, self)
+
+    def __mul__(self, k: int):
+        """SM2点的整数倍，使用了二进制的快速计算方法，并缓存了2的整数次幂用于加速计算"""
+        if self._pow_two_exp is None:
+            self._pow_two_exp = []
+            exp_p = self
+            for r in range(SM2_P_BYTE_LEN * 8):
+                self._pow_two_exp.append(exp_p)
+                exp_p += exp_p
+                exp_p = exp_p.normalize()
+
+        res = SM2Point_Jacobian(1, 1, 0)
+        mask = 1
+        for r in range(SM2_P_BYTE_LEN * 8):
+            if k & mask != 0:
+                res += self._pow_two_exp[r]
+            mask <<= 1
+        return res
+
+    def __rmul__(self, k: int):
+        return self.__mul__(k)
+
+class SM2PointRepr:
+    @staticmethod
+    def to_uncompressed(p: SM2Point_Jacobian) -> bytes:
+        """SM2点的非压缩表示（04开头）
+        GB/T 32918.1-2016 4.2.9 c)
+        """
+        buffer = bytearray()
+        buffer.append(0x04)
+        buffer.extend(p.x_octets)
+        buffer.extend(p.y_octets)
+        return bytes(buffer)
+
+    @staticmethod
+    def to_compressed(p: SM2Point_Jacobian) -> bytes:
+        """SM2点的压缩表示（02或03开头）
+        GB/T 32918.1-2016 4.2.9 c)
+        """
+        buffer = bytearray()
+        y_p = p.y & 0x01
+        buffer.append(0x02 if y_p == 0 else 0x03)
+        buffer.extend(p.x_octets)
+        return bytes(buffer)
+
+    @staticmethod
+    def to_hybrid(p: SM2Point_Jacobian) -> bytes:
+        """SM2点的混合表示（06或07开头）
+        GB/T 32918.1-2016 4.2.9 d)
+        """
+        buffer = bytearray()
+        y_p = p.y & 0x01
+        buffer.append(0x06 if y_p == 0 else 0x07)
+        buffer.extend(p.x_octets)
+        buffer.extend(p.y_octets)
+        return bytes(buffer)
+
+    @staticmethod
+    def calc_y(x: int) -> int:
+        """通过x计算SM2曲线上对应的其中一个y值
+
+        # GB/T 32918.1-2016 A.5.2
+        """
+        pow_y_2 = adds_mod_prime(SM2_P, pow_mod_prime(SM2_P, x, 3),
+                                 muls_mod_prime(SM2_P, SM2_A, x), SM2_B)
+        return square_root_mod_prime(SM2_P, pow_y_2)
+
+    @staticmethod
+    def from_bytes(octets: Union[bytes, bytearray, memoryview]) -> SM2Point_Jacobian:
+        """从字节串表示中恢复SM2点
+        GB/T 32918.1-2016 4.2.10
+        """
+        pc = octets[0]
+        if pc == 0x04:
+            if len(octets) != 2 * SM2_P_BYTE_LEN + 1:
+                raise ValueError(f"SM2点未压缩格式长度{len(octets)}不符合标准，应当为{2 * SM2_P_BYTE_LEN + 1}")
+            x = int.from_bytes(octets[1:SM2_P_BYTE_LEN + 1], byteorder='big', signed=False)
+            y = int.from_bytes(octets[SM2_P_BYTE_LEN + 1:], byteorder='big', signed=False)
+            return SM2Point_Jacobian(x, y)
+        elif pc == 0x02 or pc == 0x03:
+            y_p = 0x00 if pc == 0x02 else 0x01
+            if len(octets) != SM2_P_BYTE_LEN + 1:
+                raise ValueError(f"SM2点压缩格式长度{len(octets)}不符合标准，应当为{SM2_P_BYTE_LEN + 1}")
+            x = int.from_bytes(octets[1:], byteorder='big', signed=False)
+            y = SM2PointRepr.calc_y(x)
+            if y & 0x01 != y_p:
+                y = SM2_P - y
+            return SM2Point_Jacobian(x, y)
+        elif pc == 0x06 or pc == 0x07:
+            y_p = 0x00 if pc == 0x06 else 0x01
+            y = int.from_bytes(octets[SM2_P_BYTE_LEN + 1:], byteorder='big', signed=False)
+            if len(octets) != 2 * SM2_P_BYTE_LEN + 1:
+                raise ValueError(f"SM2点混合格式长度{len(octets)}不符合标准，应当为{2 * SM2_P_BYTE_LEN + 1}")
+            x = int.from_bytes(octets[1:], byteorder='big', signed=False)
+            ry = SM2PointRepr.calc_y(x)
+            if ry & 0x01 != y_p:
+                ry = SM2_P - ry
+            if ry != y:
+                raise ValueError("SM2点混合格式中存储的y值与x值和pc值恢复出的不一致")
+            return SM2Point_Jacobian(x, y)
+        else:
+            raise ValueError(f"SM2点的字节串表示PC值错误（{pc:02x}）")
 
 
-def quick_mul_g_point(n: int) -> 'SM2Point':
-    """快速计算倍乘基点G的方法"""
-    _init_quick_mul_g_point()
-    global _POINT_G_EXPONENT_2_VALUES
-    p = SM2Point(None, None)
-    mask = 1
-    for i in range(SM2_P_BYTE_LEN * 8):
-        if n & mask != 0:
-            p += _POINT_G_EXPONENT_2_VALUES[i]
-        mask <<= 1
-    return p
+SM2_POINT_G = SM2Point_Jacobian(SM2_X, SM2_Y, 1)
+"""SM2椭圆曲线的基点G"""
+
+"""
+========================================================================================================================
+SM2公钥和私钥实现部分
+========================================================================================================================
+"""
 
 
 DEFAULT_USER_ID = '1234567812345678'.encode()
 """用户身份ID的默认值为0x1234567812345678（GM/T 0009-2023 7 用户身份标识ID的默认值）"""
 
 
-def generator_z(p: SM2Point, uid: bytes) -> bytes:
+def generator_z(p: SM2Point_Jacobian, uid: bytes) -> bytes:
     """SM2预处理：根据用户身份ID和公钥计算出头部值
 
     GB/T 32918.2-2016 5.5
@@ -369,7 +651,7 @@ def generator_z(p: SM2Point, uid: bytes) -> bytes:
 
 
 class SM2PublicKey:
-    def __init__(self, point: SM2Point):
+    def __init__(self, point: SM2Point_Jacobian):
         self._point = point
 
     @property
@@ -384,11 +666,11 @@ class SM2PublicKey:
 
     @property
     def octets(self) -> bytes:
-        return SM2Point.repr_uncompressed(self._point)
+        return SM2PointRepr.to_uncompressed(self._point)
 
     @staticmethod
     def from_bytes(octets: Union[bytes, bytearray, memoryview]):
-        return SM2PublicKey(SM2Point.from_bytes(octets))
+        return SM2PublicKey(SM2PointRepr.from_bytes(octets))
 
     @staticmethod
     def from_coordinates(x: Optional[Union[int, bytes]], y: Optional[Union[int, bytes]]):
@@ -396,7 +678,7 @@ class SM2PublicKey:
             x = int.from_bytes(x, byteorder='big', signed=False)
         if isinstance(y, bytes):
             y = int.from_bytes(y, byteorder='big', signed=False)
-        return SM2PublicKey(SM2Point(x, y))
+        return SM2PublicKey(SM2Point_Jacobian(x, y))
 
     def generate_z(self, uid: bytes = DEFAULT_USER_ID) -> bytes:
         """根据本公钥计算出头部值
@@ -428,7 +710,7 @@ class SM2PublicKey:
         if t == 0:
             return False
 
-        pr = POINT_G * s + self._point * t  # Prove: pr == [k]G
+        pr = SM2_POINT_G * s + self._point * t  # Prove: pr == [k]G
         logger.debug("[k]G=%s", pr)
         vr = (e + pr.x) % SM2_N
         logger.debug("r=%064x", vr)
@@ -448,8 +730,8 @@ class SM2PublicKey:
             logger.debug("k=%s", _i2h(k))
             buffer = bytearray()
 
-            p1 = POINT_G * k
-            c1 = p1.to_bytes()
+            p1 = SM2_POINT_G * k
+            c1 = SM2PointRepr.to_uncompressed(p1)
             logger.debug("[k]G=%s", p1)
 
             buffer.clear()
@@ -505,7 +787,7 @@ class SM2PrivateKey:
 
     def get_public_key(self) -> SM2PublicKey:
         if self._pub_key is None:
-            self._pub_key = SM2PublicKey(quick_mul_g_point(self._secret))
+            self._pub_key = SM2PublicKey(SM2_POINT_G * self._secret)
         return self._pub_key
 
     @property
@@ -545,7 +827,7 @@ class SM2PrivateKey:
 
         while True:
             k = secrets.randbelow(SM2_N - 1) + 1
-            p = POINT_G * k
+            p = SM2_POINT_G * k
             logger.debug('[k]G=%s', p)
             r = (e + p.x) % SM2_N
             if r == 0 or r + k == SM2_N:
@@ -638,7 +920,7 @@ class SM2KeyExchange:
         self._k_byte_len = k_byte_len
         # GB/T 32918.3-2016 6.1 A1-A2/B1-B2
         r = secrets.randbelow(SM2_N - 1) + 1
-        self._point_r = POINT_G * r
+        self._point_r = SM2_POINT_G * r
 
         # GB/T 32918.3-2016 6.1 A1-A2/B1-B2
         x_bar = SM2KeyExchange._x_bar(self._point_r.x)
@@ -693,7 +975,7 @@ class SM2KeyExchange:
         self._other_point_r = point_r_other
         x_bar_other = SM2KeyExchange._x_bar(point_r_other.x)
         self._point_uv = (public_key_other.point + point_r_other * x_bar_other) * self._t
-        if self._point_uv.is_zero_point():
+        if self._point_uv.infinite:
             raise ValueError("密钥协商协商失败：计算出点V为无穷远点")
 
         buffer = bytearray()

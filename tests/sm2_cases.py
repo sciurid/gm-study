@@ -1,5 +1,4 @@
 import unittest
-
 from gmutil import *
 
 class SM2TestCase(unittest.TestCase):
