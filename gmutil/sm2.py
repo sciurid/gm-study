@@ -48,19 +48,16 @@ def p_pow(n: int, k: int) -> int:
     return pow_mod_prime(SM2_P, n, k)
 
 
+def p_inv(n: int) -> int:
+    return inverse_mod_prime(SM2_P, n)
+
+
 def p_div(a: int, b: int) -> int:
-    return (a * inverse_mod_prime(SM2_P, b)) % SM2_P
+    return (a * p_inv(b)) % SM2_P
 
 
 def p_sqrt(n: int) -> Optional[int]:
     return square_root_mod_prime(SM2_P, n)
-
-
-def on_curve(x: int, y: int) -> int:
-    """检查点(x,y)是否在SM2椭圆曲线上"""
-    left = (y ** 2) % SM2_P
-    right = (x ** 3 + SM2_A * x + SM2_B) % SM2_P
-    return left == right
 
 
 def _i2h(n: int) -> Optional[str]:
@@ -81,6 +78,7 @@ SM2椭圆曲线上点的Jacobian仿射坐标系实现
 ========================================================================================================================
 """
 
+
 class SM2Point:
     """SM2椭圆曲线上的整数点，简称SM2点"""
 
@@ -93,8 +91,15 @@ class SM2Point:
         self._x = x
         self._y = y
         assert (self._x is None) == (self._y is None)
-        if self._x is not None and not on_curve(x, y):  # 检验是否在椭圆曲线上
+        if self._x is not None and not SM2Point.on_curve(x, y):  # 检验是否在椭圆曲线上
             raise ValueError(f"点{_i2h(x)} {_i2h(y)}不在SM2椭圆曲线上")
+
+    @staticmethod
+    def on_curve(x: int, y: int) -> int:
+        """检查点(x,y)是否在SM2椭圆曲线上"""
+        left = (y ** 2) % SM2_P
+        right = (x ** 3 + SM2_A * x + SM2_B) % SM2_P
+        return left == right
 
     @property
     def x(self) -> int:
@@ -271,7 +276,6 @@ class SM2Point:
 
 POINT_G = SM2Point(SM2_X, SM2_Y)  # SM2曲线的基点G
 
-
 """
 ========================================================================================================================
 SM2椭圆曲线上点的Jacobian加重射影坐标系实现
@@ -280,8 +284,10 @@ SM2椭圆曲线上点的Jacobian加重射影坐标系实现
 ========================================================================================================================
 """
 
+
 class _Calculation_Cache:
     """用于加速计算的中间值缓存"""
+
     def __init__(self, x: int, y: int, z: int):
         self.x = x
         self.y = y
@@ -305,68 +311,68 @@ class _Calculation_Cache:
     @property
     def pow_x_2(self):
         if self._cache[0] is None:
-            self._cache[0] = mul_mod_prime(SM2_P, self.x, self.x)
+            self._cache[0] = p_mul(self.x, self.x)
         return self._cache[0]
 
     @property
     def pow_x_3(self):
         if self._cache[1] is None:
-            self._cache[1] = mul_mod_prime(SM2_P, self.pow_x_2, self.x)
+            self._cache[1] = p_mul(self.pow_x_2, self.x)
         return self._cache[1]
 
     @property
     def pow_y_2(self):
         if self._cache[2] is None:
-            self._cache[2] = mul_mod_prime(SM2_P, self.y, self.y)
+            self._cache[2] = p_mul(self.y, self.y)
         return self._cache[2]
 
     @property
     def pow_y_4(self):
         if self._cache[3] is None:
             y_2 = self.pow_y_2
-            self._cache[3] = mul_mod_prime(SM2_P, y_2, y_2)
+            self._cache[3] = p_mul(y_2, y_2)
         return self._cache[3]
 
     @property
     def inv_z_1(self):
         if self._cache[4] is None:
-            self._cache[4] = inverse_mod_prime(SM2_P, self.z)
+            self._cache[4] = p_inv(self.z)
         return self._cache[4]
 
     @property
     def inv_z_2(self):
         if self._cache[5] is None:
-            self._cache[5] = mul_mod_prime(SM2_P, self.inv_z_1, self.inv_z_1)
+            self._cache[5] = p_mul(self.inv_z_1, self.inv_z_1)
         return self._cache[5]
 
     @property
     def inv_z_3(self):
         if self._cache[6] is None:
-            self._cache[6] = mul_mod_prime(SM2_P, self.inv_z_2, self.inv_z_1)
+            self._cache[6] = p_mul(self.inv_z_2, self.inv_z_1)
         return self._cache[6]
 
     @property
     def pow_z_2(self):
         if self._cache[7] is None:
-            self._cache[7] = mul_mod_prime(SM2_P, self.z, self.z)
+            self._cache[7] = p_mul(self.z, self.z)
         return self._cache[7]
 
     @property
     def pow_z_3(self):
         if self._cache[8] is None:
-            self._cache[8] = mul_mod_prime(SM2_P, self.pow_z_2, self.z)
+            self._cache[8] = p_mul(self.pow_z_2, self.z)
         return self._cache[8]
 
     @property
     def pow_z_4(self):
         if self._cache[9] is None:
-            self._cache[9] = mul_mod_prime(SM2_P, self.pow_z_2, self.pow_z_2)
+            self._cache[9] = p_mul(self.pow_z_2, self.pow_z_2)
         return self._cache[9]
 
     @property
     def pow_z_6(self):
         if self._cache[10] is None:
-            self._cache[10] = mul_mod_prime(SM2_P, self.pow_z_3, self.pow_z_3)
+            self._cache[10] = p_mul(self.pow_z_3, self.pow_z_3)
         return self._cache[10]
 
 
@@ -396,24 +402,24 @@ class SM2Point_Jacobian:
         if self._z == 0:
             return None
         elif self._norm_x is None:
-            self._norm_x = mul_mod_prime(SM2_P, self._x, self._cache.inv_z_2)
+            self._norm_x = p_mul(self._x, self._cache.inv_z_2)
         return self._norm_x
 
     @property
     def x_octets(self):
-        return None if self.x is None else self.x.to_bytes(SM2_P_BYTE_LEN, byteorder='big', signed=False)
+        return None if self.x is None else _i2b(self.x)
 
     @property
     def y(self):
         if self._z == 0:
             return None
         elif self._norm_y is None:
-            self._norm_y = mul_mod_prime(SM2_P, self._y, self._cache.inv_z_3)
+            self._norm_y = p_mul(self._y, self._cache.inv_z_3)
         return self._norm_y
 
     @property
     def y_octets(self):
-        return None if self.y is None else self.y.to_bytes(SM2_P_BYTE_LEN, byteorder='big', signed=False)
+        return None if self.y is None else _i2b(self.y)
 
     def normalize(self):
         if self._z == 0:
@@ -428,26 +434,26 @@ class SM2Point_Jacobian:
         left = self._cache.pow_y_2
 
         if self._z == 1:
-            right = adds_mod_prime(SM2_P, self._cache.pow_x_3,
-                                   mul_mod_prime(SM2_P, SM2_A, self._x), SM2_B)
+            right = p_adds(self._cache.pow_x_3,
+                           p_mul(SM2_A, self._x), SM2_B)
         else:
-            right = adds_mod_prime(SM2_P,self._cache.pow_x_3,
-                                   muls_mod_prime(SM2_P, SM2_A, self._x, self._cache.pow_z_4),
-                                   mul_mod_prime(SM2_P, SM2_B, self._cache.pow_z_6))
+            right = p_adds(self._cache.pow_x_3,
+                                   p_muls(SM2_A, self._x, self._cache.pow_z_4),
+                                   p_mul(SM2_B, self._cache.pow_z_6))
         return left == right
 
     @staticmethod
     def check_same_or_reverse_point(p1: 'SM2Point_Jacobian', p2: 'SM2Point_Jacobian'):
         """检验不为无穷远的两个点是否相同或互为逆元"""
-        lx = mul_mod_prime(SM2_P, p1._x, p2._cache.pow_z_2)
-        rx = mul_mod_prime(SM2_P, p2._x, p1._cache.pow_z_2)
+        lx = p_mul(p1._x, p2._cache.pow_z_2)
+        rx = p_mul(p2._x, p1._cache.pow_z_2)
         if lx != rx:
             return 0
-        ly = mul_mod_prime(SM2_P, p1._y, p2._cache.pow_z_3)
-        ry = mul_mod_prime(SM2_P, p2._y, p1._cache.pow_z_3)
+        ly = p_mul(p1._y, p2._cache.pow_z_3)
+        ry = p_mul(p2._y, p1._cache.pow_z_3)
         if ly == ry:
             return 1
-        elif mul_mod_prime(SM2_P, ly, ry) == 0:
+        elif p_mul(ly, ry) == 0:
             return -1
         else:
             raise ValueError('相同X的两点Y不相同也不相反')
@@ -473,33 +479,33 @@ class SM2Point_Jacobian:
             return SM2Point_Jacobian(1, 1, 0)
 
         if sr == 1:
-            l1 = add_mod_prime(SM2_P, mul_mod_prime(SM2_P, 3, p1._cache.pow_x_2),
-                               mul_mod_prime(SM2_P, SM2_A, p1._cache.pow_z_4))
-            l2 = muls_mod_prime(SM2_P, 4, p1._x, p1._cache.pow_y_2)
-            l3 = mul_mod_prime(SM2_P, 8, p1._cache.pow_y_4)
+            l1 = p_add(p_mul(3, p1._cache.pow_x_2),
+                       p_mul(SM2_A, p1._cache.pow_z_4))
+            l2 = p_muls(4, p1._x, p1._cache.pow_y_2)
+            l3 = p_mul(8, p1._cache.pow_y_4)
 
-            x3 = minus_mod_prime(SM2_P, mul_mod_prime(SM2_P, l1, l1), muls_mod_prime(SM2_P, 2, l2))
-            y3 = minus_mod_prime(SM2_P, mul_mod_prime(SM2_P, l1, minus_mod_prime(SM2_P, l2, x3)), l3)
-            z3 = muls_mod_prime(SM2_P, 2, p1._y, p1._z)
+            x3 = p_minus(p_mul(l1, l1), p_muls(2, l2))
+            y3 = p_minus(p_mul(l1, p_minus(l2, x3)), l3)
+            z3 = p_muls(2, p1._y, p1._z)
             return SM2Point_Jacobian(x3, y3, z3)
         else:
-            l1 = mul_mod_prime(SM2_P, p1._x, p2._cache.pow_z_2)
-            l2 = mul_mod_prime(SM2_P, p2._x, p1._cache.pow_z_2)
-            l3 = minus_mod_prime(SM2_P, l1, l2)
-            l4 = mul_mod_prime(SM2_P, p1._y, p2._cache.pow_z_3)
-            l5 = mul_mod_prime(SM2_P, p2._y, p1._cache.pow_z_3)
-            l6 = minus_mod_prime(SM2_P, l4, l5)
-            l7 = add_mod_prime(SM2_P, l1, l2)
+            l1 = p_mul(p1._x, p2._cache.pow_z_2)
+            l2 = p_mul(p2._x, p1._cache.pow_z_2)
+            l3 = p_minus(l1, l2)
+            l4 = p_mul(p1._y, p2._cache.pow_z_3)
+            l5 = p_mul(p2._y, p1._cache.pow_z_3)
+            l6 = p_minus(l4, l5)
+            l7 = p_add(l1, l2)
 
-            l3_2 = mul_mod_prime(SM2_P, l3, l3)
-            l3_3 = mul_mod_prime(SM2_P, l3_2, l3)
+            l3_2 = p_mul(l3, l3)
+            l3_3 = p_mul(l3_2, l3)
 
-            x3 = minus_mod_prime(SM2_P, mul_mod_prime(SM2_P,l6, l6), mul_mod_prime(SM2_P, l7, l3_2))
+            x3 = p_minus(p_mul(l6, l6), p_mul(l7, l3_2))
 
-            y3_p1 = minus_mod_prime(SM2_P, mul_mod_prime(SM2_P, l1, l3_2), x3)
-            y3_p2 = mul_mod_prime(SM2_P, l4, l3_3)
-            y3 = minus_mod_prime(SM2_P, mul_mod_prime(SM2_P, l6, y3_p1), y3_p2)
-            z3 = muls_mod_prime(SM2_P, p1._z, p2._z, l3)
+            y3_p1 = p_minus(p_mul(l1, l3_2), x3)
+            y3_p2 = p_mul(l4, l3_3)
+            y3 = p_minus(p_mul(l6, y3_p1), y3_p2)
+            z3 = p_muls(p1._z, p2._z, l3)
             return SM2Point_Jacobian(x3, y3, z3)
 
     def __add__(self, other):
@@ -528,6 +534,7 @@ class SM2Point_Jacobian:
 
     def __rmul__(self, k: int):
         return self.__mul__(k)
+
 
 class SM2PointRepr:
     @staticmethod
@@ -570,8 +577,8 @@ class SM2PointRepr:
 
         # GB/T 32918.1-2016 A.5.2
         """
-        pow_y_2 = adds_mod_prime(SM2_P, pow_mod_prime(SM2_P, x, 3),
-                                 muls_mod_prime(SM2_P, SM2_A, x), SM2_B)
+        pow_y_2 = p_adds(p_pow(x, 3),
+        p_muls(SM2_A, x), SM2_B)
         return square_root_mod_prime(SM2_P, pow_y_2)
 
     @staticmethod
@@ -619,7 +626,6 @@ SM2_POINT_G = SM2Point_Jacobian(SM2_X, SM2_Y, 1)
 SM2公钥和私钥实现部分
 ========================================================================================================================
 """
-
 
 DEFAULT_USER_ID = '1234567812345678'.encode()
 """用户身份ID的默认值为0x1234567812345678（GM/T 0009-2023 7 用户身份标识ID的默认值）"""
@@ -1032,13 +1038,13 @@ class SM2KeyExchangePartyA(SM2KeyExchange):
         self.calculate_key(True, public_key_b, point_r_b, uid_b)
         # 步骤B8，计算S_1
         s_1 = SM2KeyExchange.calculate_sab(False, self._point_uv, self._own_z, self._other_z,
-                            self.point_r, self._other_point_r)
+                                           self.point_r, self._other_point_r)
         if s_1 != s_b:
             raise ValueError("密钥确认步骤（A9）失败：S_B={}, S_1={}".format(s_b.hex(), s_1.hex()))
 
     def send_3(self) -> Tuple[bytes]:
         s_a = SM2KeyExchange.calculate_sab(True, self._point_uv, self._own_z, self._other_z,
-                            self.point_r, self._other_point_r)
+                                           self.point_r, self._other_point_r)
         return (s_a,)
 
 
@@ -1061,16 +1067,13 @@ class SM2KeyExchangePartyB(SM2KeyExchange):
 
         # 步骤B8，计算S_B
         self._s_b = SM2KeyExchange.calculate_sab(False, self._point_uv, self._other_z, self._own_z,
-                                  self._other_point_r, self.point_r)
+                                                 self._other_point_r, self.point_r)
 
     def send_2(self):
         return self._public_key, self._point_r, self._uid, self._s_b
 
     def receive_3(self, s_a: bytes):
         s_2 = SM2KeyExchange.calculate_sab(True, self._point_uv, self._other_z, self._own_z,
-                            self._other_point_r, self.point_r)
+                                           self._other_point_r, self.point_r)
         if s_2 != s_a:
             raise ValueError("密钥确认步骤（A9）失败：S_B={}, S_1={}".format(s_a.hex(), s_2.hex()))
-
-
-
